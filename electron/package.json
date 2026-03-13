@@ -1,0 +1,16 @@
+{
+  "name": "budget-app-electron",
+  "version": "1.0.0",
+  "description": "Budget App Electron wrapper",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "dependencies": {
+    "electron": "^22.0.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^23.6.0"
+  }
+}
