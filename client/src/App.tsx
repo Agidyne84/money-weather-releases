@@ -1,20 +1,27 @@
-import { Routes, Route } from 'react-router-dom'
+import React from 'react'
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
-import Transactions from './pages/Transactions'
 import Budget from './pages/Budget'
 import Forecast from './pages/Forecast'
-import Layout from './components/Layout'
+import History from './pages/History'
+import Accounts from './pages/Accounts'
+import Setup from './pages/Setup'
 
 function App() {
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/transactions" element={<Transactions />} />
-        <Route path="/budget" element={<Budget />} />
-        <Route path="/forecast" element={<Forecast />} />
-      </Routes>
-    </Layout>
+    <Router>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/budget" element={<Budget />} />
+          <Route path="/forecast" element={<Forecast />} />
+          <Route path="/history" element={<History />} />
+          <Route path="/accounts" element={<Accounts />} />
+          <Route path="/setup" element={<Setup />} />
+        </Routes>
+      </Layout>
+    </Router>
   )
 }
 
