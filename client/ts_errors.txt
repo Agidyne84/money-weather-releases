@@ -1,0 +1,44 @@
+src/App.tsx(1,1): error TS6133: 'React' is declared but its value is never read.
+src/components/FrequencySelector.tsx(237,9): error TS6133: 'handleMonthWeekPatternChange' is declared but its value is never read.
+src/components/FrequencySelector.tsx(245,9): error TS6133: 'handleYearMonthPatternChange' is declared but its value is never read.
+src/components/FrequencySelector.tsx(303,9): error TS6133: 'handleYearWeekPatternChange' is declared but its value is never read.
+src/pages/Budget.tsx(1,27): error TS6133: 'useEffect' is declared but its value is never read.
+src/pages/Budget.tsx(104,49): error TS7006: Parameter 'm' implicitly has an 'any' type.
+src/pages/Budget.tsx(111,34): error TS7006: Parameter 'd' implicitly has an 'any' type.
+src/pages/Budget.tsx(128,33): error TS7006: Parameter 'd' implicitly has an 'any' type.
+src/pages/Budget.tsx(135,34): error TS7006: Parameter 'd' implicitly has an 'any' type.
+src/pages/Budget.tsx(175,47): error TS7006: Parameter 'm' implicitly has an 'any' type.
+src/pages/Budget.tsx(247,9): error TS6133: 'handleMonthWeekPatternChange' is declared but its value is never read.
+src/pages/Budget.tsx(302,9): error TS6133: 'handleYearWeekPatternChange' is declared but its value is never read.
+src/pages/Budget.tsx(341,10): error TS6133: 'manualForm' is declared but its value is never read.
+src/pages/Budget.tsx(341,22): error TS6133: 'setManualForm' is declared but its value is never read.
+src/pages/Budget.tsx(343,6): error TS2554: Expected 0-1 arguments, but got 2.
+src/pages/Budget.tsx(387,5): error TS2304: Cannot find name 'setFormErrors'.
+src/pages/Budget.tsx(425,7): error TS2304: Cannot find name 'setFormErrors'.
+src/pages/Budget.tsx(429,7): error TS2304: Cannot find name 'setFormErrors'.
+src/pages/Budget.tsx(603,39): error TS18046: 'error' is of type 'unknown'.
+src/pages/Budget.tsx(603,63): error TS18046: 'error' is of type 'unknown'.
+src/pages/Budget.tsx(1598,15): error TS2304: Cannot find name 'setFormErrors'.
+src/pages/Budget.tsx(1697,12): error TS2304: Cannot find name 'formErrors'.
+src/pages/Budget.tsx(1701,18): error TS2304: Cannot find name 'formErrors'.
+src/pages/Budget.tsx(1701,34): error TS7006: Parameter 'error' implicitly has an 'any' type.
+src/pages/Budget.tsx(1701,41): error TS7006: Parameter 'index' implicitly has an 'any' type.
+src/pages/Budget.tsx(1726,17): error TS2304: Cannot find name 'setFormErrors'.
+src/pages/Forecast.tsx(88,17): error TS2322: Type '"income" | "expense" | "administrative"' is not assignable to type '"income" | "expense"'.
+  Type '"administrative"' is not assignable to type '"income" | "expense"'.
+src/pages/Forecast.tsx(412,9): error TS6133: 'getSummaryStats' is declared but its value is never read.
+src/pages/Forecast.tsx(431,9): error TS6133: 'getBalanceForecastData' is declared but its value is never read.
+src/pages/Forecast.tsx(566,11): error TS2322: Type '"income" | "expense" | "administrative"' is not assignable to type '"income" | "expense" | undefined'.
+  Type '"administrative"' is not assignable to type '"income" | "expense" | undefined'.
+src/pages/Forecast.tsx(577,11): error TS2322: Type '"income" | "expense" | "administrative"' is not assignable to type '"income" | "expense"'.
+  Type '"administrative"' is not assignable to type '"income" | "expense"'.
+src/pages/Forecast.tsx(653,15): error TS2322: Type '"income" | "expense" | "administrative"' is not assignable to type '"income" | "expense"'.
+  Type '"administrative"' is not assignable to type '"income" | "expense"'.
+src/pages/Forecast.tsx(694,9): error TS2322: Type '"income" | "expense" | "administrative"' is not assignable to type '"income" | "expense"'.
+  Type '"administrative"' is not assignable to type '"income" | "expense"'.
+src/pages/History.tsx(644,7): error TS6133: 'EditForm' is declared but its value is never read.
+src/pages/History.tsx(644,87): error TS6133: 'setCategories' is declared but its value is never read.
+src/pages/Transactions.tsx(5,10): error TS6133: 'transactions' is declared but its value is never read.
+src/pages/Transactions.tsx(5,24): error TS6133: 'setTransactions' is declared but its value is never read.
+src/services/api.ts(6,3): error TS6133: 'TransactionFormData' is declared but its value is never read.
+src/services/api.ts(7,3): error TS6133: 'AccountFormData' is declared but its value is never read.
