@@ -1,71 +1,93 @@
-const Transactions = () => {
+import React, { useState, useEffect } from 'react'
+import { Transaction } from '../types'
+
+const Transactions: React.FC = () => {
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // TODO: Fetch transactions from API
+    setLoading(false)
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-gray-500">Loading transactions...</div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
-        <button className="btn-primary">Add Transaction</button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
+          <p className="text-gray-600">Manage your recurring transactions and overrides</p>
+        </div>
+        <button className="btn-primary">
+          Add Transaction
+        </button>
       </div>
 
+      {/* Transaction List */}
       <div className="card">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Recent Transactions</h2>
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              placeholder="Search transactions..."
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
-            <select className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500">
-              <option>All Categories</option>
-              <option>Groceries</option>
-              <option>Entertainment</option>
-              <option>Utilities</option>
-            </select>
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Recurring Transactions</h3>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+            <div className="flex-1">
+              <div className="flex items-center space-x-3">
+                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                <div>
+                  <p className="font-medium text-gray-900">Monthly Salary</p>
+                  <p className="text-sm text-gray-500">Income • Monthly • Starting Jan 1, 2024</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <p className="font-medium text-green-600">+$3,000.00</p>
+              <button className="btn-secondary text-sm">Edit</button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+            <div className="flex-1">
+              <div className="flex items-center space-x-3">
+                <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                <div>
+                  <p className="font-medium text-gray-900">Rent Payment</p>
+                  <p className="text-sm text-gray-500">Expense • Monthly • Starting Jan 1, 2024</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <p className="font-medium text-red-600">-$1,200.00</p>
+              <button className="btn-secondary text-sm">Edit</button>
+            </div>
           </div>
         </div>
+      </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Description
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Category
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Amount
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              <tr>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Mar 13, 2026</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Grocery Store</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Groceries</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">-$125.50</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <button className="text-primary-600 hover:text-primary-900">Edit</button>
-                </td>
-              </tr>
-              <tr>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Mar 11, 2026</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Salary Deposit</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Income</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600">+$2,625.00</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <button className="text-primary-600 hover:text-primary-900">Edit</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+      {/* Forecast Overrides */}
+      <div className="card">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Forecast Overrides</h3>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="flex-1">
+              <div className="flex items-center space-x-3">
+                <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                <div>
+                  <p className="font-medium text-gray-900">Electric Bill - January</p>
+                  <p className="text-sm text-gray-500">Override: $178.00 (was $150.00) • Jan 15, 2024</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <p className="font-medium text-red-600">-$178.00</p>
+              <button className="btn-secondary text-sm">Edit</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -1,16 +1,30 @@
 {
   "name": "budget-app-electron",
   "version": "1.0.0",
-  "description": "Budget App Electron wrapper",
+  "description": "Budget App Electron Wrapper",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "dist": "electron-builder --publish=never"
   },
   "dependencies": {
-    "electron": "^22.0.0"
+    "electron": "^28.1.0"
   },
   "devDependencies": {
-    "electron-builder": "^23.6.0"
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.budgetapp.desktop",
+    "productName": "Budget App",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "../client/dist/**/*",
+      "../server/dist/**/*",
+      "../server/database/**/*"
+    ]
   }
 }
