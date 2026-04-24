@@ -132,8 +132,8 @@ const Budget: React.FC = () => {
 
     if (frequency.unit === 'months') {
       if (frequency.customPattern?.startsWith('days:')) {
-        const days = frequency.customPattern.replace('days:', '').split(',').map(Number)
-        const dayList = days.map(d => getOrdinal(d)).join(', ')
+        const days = frequency.customPattern.replace('days:', '').split(',').map(Number) as number[]
+        const dayList = days.map((d: number) => getOrdinal(d)).join(', ')
         return `Every ${frequency.value} month${frequency.value > 1 ? 's' : ''} on the ${dayList}`
       }
       if (frequency.customPattern?.startsWith('week:')) {
@@ -341,7 +341,7 @@ const Budget: React.FC = () => {
   })
   const [manualForm, setManualForm] = useState({
     description: '',
-  }, [])
+  })
 
   const scrollToTransactionForm = () => {
     const formElement = document.getElementById('add-transaction-form')
@@ -603,9 +603,9 @@ const Budget: React.FC = () => {
       console.log('Transaction updated successfully')
       await loadData()
       cancelEdit()
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating transaction:', error)
-      console.error('Error details:', error.response?.data || error.message)
+      console.error('Error details:', error?.response?.data || error?.message)
     }
   }
 
