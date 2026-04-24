@@ -1,145 +1,166 @@
 # Budget App
 
-A privacy-first, local-first personal budgeting application with forecasting capabilities and chokepoint identification.
+A privacy-first, locally-hosted budget management application built with React, TypeScript, and Node.js.
 
-## Features
-
-- **Privacy-First**: All data stored locally on your device. No cloud storage, no data collection.
-- **Cross-Device**: Works on desktop (Electron) and mobile (Progressive Web App)
-- **Budget Tracking**: Monthly budget planning and tracking by category
-- **Transaction Management**: Add, edit, and categorize income and expenses
-- **Forecasting**: AI-powered financial forecasting for future months
-- **Chokepoint Detection**: Identifies potential budget problems before they happen
-- **Data Sync**: Export/import functionality for cross-device synchronization
-
-## Technology Stack
-
-- **Frontend**: React + TypeScript + Tailwind CSS
-- **Backend**: Node.js + Express + SQLite
-- **Desktop**: Electron wrapper
-- **Mobile**: Progressive Web App (PWA)
-- **Database**: Local SQLite database
-
-## Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
-
 - Node.js (v18 or higher)
-- npm or yarn
+- npm (comes with Node.js)
 
 ### Installation
-
-1. Clone the repository:
 ```bash
-git clone <repository-url>
-cd BudgetApp
+# Install dependencies for all components
+scripts\setup.bat
 ```
 
-2. Install dependencies:
+### Running the Application
+
+#### Option 1: Web Development
 ```bash
-# Install client dependencies
-cd client
-npm install
-
-# Install server dependencies
-cd ../server
-npm install
-
-# Install Electron dependencies (optional, for desktop app)
-cd ../electron
-npm install
-```
-
-3. Start the development servers:
-
-**Terminal 1 - Start the backend server:**
-```bash
+# Terminal 1: Start the backend server
 cd server
-npm run dev
-```
+npm start
 
-**Terminal 2 - Start the frontend:**
-```bash
+# Terminal 2: Start the frontend client
 cd client
 npm run dev
 ```
 
-4. Open your browser and navigate to `http://localhost:3000`
+The application will be available at:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:3001
 
-### Desktop App
-
-To run the desktop Electron app:
-
+#### Option 2: Electron Desktop App
 ```bash
 cd electron
 npm start
 ```
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 BudgetApp/
-├── client/              # React frontend (PWA)
+├── client/                 # React frontend
 │   ├── src/
-│   │   ├── components/  # Reusable UI components
-│   │   ├── pages/       # Page components
-│   │   ├── hooks/       # Custom React hooks
-│   │   ├── utils/       # Utility functions
-│   │   ├── types/       # TypeScript type definitions
-│   │   └── services/    # API service layer
-│   ├── public/          # Static assets
-│   └── package.json
-├── server/              # Node.js backend
+│   │   ├── components/     # Reusable UI components
+│   │   ├── pages/         # Page components
+│   │   ├── App.tsx        # Main app with routing
+│   │   └── main.tsx       # Entry point
+│   ├── package.json
+│   └── vite.config.ts
+├── server/                # Node.js backend
 │   ├── src/
-│   │   ├── routes/      # API routes
-│   │   ├── models/      # Database models
-│   │   ├── middleware/  # Express middleware
-│   │   ├── services/    # Business logic
-│   │   └── utils/       # Utility functions
-│   ├── database/        # Database schema and migrations
+│   │   └── index.ts       # Express server with API
+│   ├── database/
+│   │   └── schema.sql     # SQLite database schema
 │   └── package.json
-├── electron/            # Electron desktop wrapper
-│   ├── main.js          # Electron main process
+├── electron/              # Electron desktop wrapper
+│   ├── main.js           # Electron main process
 │   └── package.json
-├── shared/              # Shared types and utilities
-├── docs/               # Documentation
-└── scripts/            # Build and deployment scripts
+├── shared/                # Shared types and utilities
+├── docs/                  # Documentation
+└── scripts/              # Setup and utility scripts
 ```
 
-## Data Sync Strategy
+## 🎯 Features
 
-Since this is a privacy-first app, data synchronization is handled through file-based export/import:
+### Phase 1 ✅ Complete
+- **Frontend Structure**: React + TypeScript with routing
+- **Backend API**: Express server with RESTful endpoints
+- **Pages**: Dashboard, Transactions, Budget, Forecast
+- **Responsive Design**: Tailwind CSS styling
+- **Privacy-First**: All data stored locally
 
-1. **Export Data**: Users can export their data as a JSON file
-2. **Import Data**: Users can import the JSON file on another device
-3. **No Cloud Storage**: You never have access to user financial data
+### Phase 2 🚧 In Progress
+- **Database Integration**: SQLite with full schema
+- **Data Persistence**: Real transaction and account management
+- **Frequency Engine**: Custom transaction scheduling
+- **Import/Export**: Data synchronization capabilities
 
-## API Endpoints
+### Phase 3 📋 Planned
+- **Bank Integration**: CSV import from banks
+- **Advanced Analytics**: Spending insights and reports
+- **Mobile Support**: Responsive design optimization
+- **Desktop App**: Electron packaging and distribution
 
-- `GET /api/health` - Health check
-- `GET /api/categories` - Get all categories
-- `GET /api/transactions` - Get transactions
+## 🔧 Technology Stack
+
+### Frontend
+- **React 18**: Modern UI framework
+- **TypeScript**: Type-safe development
+- **Vite**: Fast build tool and dev server
+- **Tailwind CSS**: Utility-first styling
+- **React Router**: Client-side routing
+
+### Backend
+- **Node.js**: JavaScript runtime
+- **Express**: Web framework
+- **SQLite**: Local database storage
+- **TypeScript**: Type-safe API development
+
+### Desktop
+- **Electron**: Cross-platform desktop app
+
+## 📊 API Endpoints
+
+### Accounts
+- `GET /api/accounts` - List all accounts
+- `POST /api/accounts` - Create new account
+
+### Categories
+- `GET /api/categories` - List hierarchical categories
+- `POST /api/categories` - Create new category
+
+### Transactions
+- `GET /api/transactions` - List transactions
 - `POST /api/transactions` - Create transaction
-- `GET /api/budget/summary/:year/:month` - Get budget summary
+
+### Data Management
 - `GET /api/export` - Export all data
 - `POST /api/import` - Import data
 
-## Contributing
+### Health
+- `GET /api/health` - Server health check
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+## 🔒 Privacy & Security
 
-## License
+- **Local Storage**: All data stored in SQLite database on your machine
+- **No External APIs**: No data transmitted to external services
+- **Export Control**: You control when and how data is shared
+- **Open Source**: Full transparency and auditability
 
-MIT License - see LICENSE file for details
+## 🛠️ Development
 
-## Privacy Policy
+### Running Tests
+```bash
+# Frontend tests
+cd client && npm test
 
-This application is designed to be privacy-first:
-- All data is stored locally on the user's device
-- No data is transmitted to external servers
-- No analytics or tracking
-- Users have complete control over their financial data
+# Backend tests
+cd server && npm test
+```
+
+### Building for Production
+```bash
+# Build frontend
+cd client && npm run build
+
+# Build backend
+cd server && npm run build
+
+# Build Electron app
+cd electron && npm run build
+```
+
+## 📝 License
+
+This project is open source and available under the [MIT License](LICENSE).
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📞 Support
+
+For questions, issues, or feature requests, please open an issue on the project repository.
