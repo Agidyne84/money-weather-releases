@@ -98,8 +98,12 @@ export const validateTransaction = (transaction: any): ValidationResult => {
     errors.push('Account ID is required')
   }
 
-  if (!transaction.type || !['income', 'expense'].includes(transaction.type)) {
-    errors.push('Transaction type must be income or expense')
+  if (!transaction.type || !['income', 'expense', 'administrative'].includes(transaction.type)) {
+    errors.push('Transaction type must be income, expense, or administrative')
+  }
+
+  if (transaction.isTransfer === true && (!transaction.transferToAccountId || typeof transaction.transferToAccountId !== 'string')) {
+    errors.push('Transfer to account is required when isTransfer is true')
   }
 
   if (typeof transaction.isActive !== 'boolean') {

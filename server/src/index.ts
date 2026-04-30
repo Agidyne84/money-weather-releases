@@ -238,46 +238,50 @@ async function startServer() {
     })
 
     app.post('/api/transactions', async (req: any, res: any) => {
-      const { 
-        name, amount, frequencyValue, frequencyUnit, customFrequencyPattern,
-        startDate, endDate, pauseStartDate, pauseEndDate,
-        categoryId, accountId, type 
-      } = req.body
-      
-      // Validate input
-      const validation = validateTransaction({ 
-        name, amount, frequencyValue, frequencyUnit, customFrequencyPattern,
-        startDate, endDate, pauseStartDate, pauseEndDate,
-        categoryId, accountId, type, isActive: true 
-      })
+      const { name, amount, frequencyValue, frequencyUnit, customFrequencyPattern, startDate, endDate, pauseStartDate, pauseEndDate, categoryId, accountId, type, isTransfer, transferToAccountId } = req.body
+
+      const normalizedAmount = type === 'income' ? Math.abs(Number(amount)) : -Math.abs(Number(amount))
+      const validation = validateTransaction({ name, amount: normalizedAmount, frequencyValue, frequencyUnit, customFrequencyPattern, startDate, endDate, pauseStartDate, pauseEndDate, categoryId, accountId, type, isTransfer, transferToAccountId, isActive: true })
       if (!validation.isValid) {
         return res.status(400).json({ error: 'Validation failed', details: validation.errors })
       }
-      
+
       try {
-        const id = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-        await db.run(`
-          INSERT INTO transactions (
-            id, name, amount, frequency_value, frequency_unit, custom_frequency_pattern,
-            start_date, end_date, pause_start_date, pause_end_date,
-            category_id, account_id, type
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          id, name, amount, frequencyValue, frequencyUnit, customFrequencyPattern,
-          startDate, endDate, pauseStartDate, pauseEndDate,
-          categoryId, accountId, type
-        ])
+        // Validate that the account exists
+        const account = await db.get('SELECT * FROM accounts WHERE id = ?', [accountId])
+        if (!account) {
+          return res.status(400).json({ error: 'Invalid account ID' })
+        }
+
+        // Validate that the category exists
+        const category = await db.get('SELECT * FROM categories WHERE id = ?', [categoryId])
+        if (!category) {
+          return res.status(400).json({ error: 'Invalid category ID' })
+        }
+
+        // Insert transaction without the end_date for now, as it's not in the schema
+        const result = await db.run(`
+          INSERT INTO transactions (name, amount, frequency_value, frequency_unit, custom_frequency_pattern, start_date, end_date, pause_start_date, pause_end_date, category_id, account_id, type, is_transfer, transfer_to_account_id, is_active)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [name, normalizedAmount, frequencyValue, frequencyUnit, customFrequencyPattern || null, startDate, endDate || null, pauseStartDate || null, pauseEndDate || null, categoryId, accountId, type, isTransfer ? 1 : 0, transferToAccountId || null, true])
         
-        const newTransaction = await db.get(`
+        if (!result.lastID) {
+          return res.status(500).json({ error: 'Failed to insert transaction' })
+        }
+
+        const transaction = await db.get(`
           SELECT t.*, c.name as category_name, c.color as category_color,
                  a.name as account_name, a.type as account_type
           FROM transactions t
           JOIN categories c ON t.category_id = c.id
           JOIN accounts a ON t.account_id = a.id
           WHERE t.id = ?
-        `, [id])
+        `, [result.lastID])
         
-        res.json(Database.toCamelCase(newTransaction))
+        if (!transaction) {
+          return res.status(500).json({ error: 'Failed to retrieve created transaction' })
+        }
+        res.status(201).json(Database.toCamelCase(transaction))
       } catch (error) {
         res.status(400).json({ error: (error as Error).message })
       }
@@ -288,7 +292,7 @@ async function startServer() {
       const { 
         name, amount, frequencyValue, frequencyUnit, customFrequencyPattern,
         startDate, endDate, pauseStartDate, pauseEndDate,
-        categoryId, accountId, type, isActive
+        categoryId, accountId, type, isTransfer, transferToAccountId, isActive
       } = req.body
       
       try {
@@ -308,12 +312,12 @@ async function startServer() {
           SET name = ?, amount = ?, frequency_value = ?, frequency_unit = ?, 
               custom_frequency_pattern = ?, start_date = ?, end_date = ?, 
               pause_start_date = ?, pause_end_date = ?, category_id = ?, 
-              account_id = ?, type = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+              account_id = ?, type = ?, is_transfer = ?, transfer_to_account_id = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `, [
           name, amount, frequencyValue, frequencyUnit, customFrequencyPattern,
           startDate, endDate, pauseStartDate, pauseEndDate,
-          categoryId, accountId, type, isActive ? 1 : 0, id
+          categoryId, accountId, type, isTransfer ? 1 : 0, transferToAccountId || null, isActive ? 1 : 0, id
         ])
         
         const updatedTransaction = await db.get(`
@@ -383,7 +387,7 @@ async function startServer() {
     })
 
     app.post('/api/history', async (req: any, res: any) => {
-      const { transactionId, accountId, categoryId, date, description, amount, type, isSuppressed, isManualEdit, isPosted } = req.body
+      const { transactionId, accountId, categoryId, date, description, amount, type, isSuppressed, isManualEdit, isPosted, isTransfer, transferToAccountId } = req.body
       if (!accountId || !categoryId || !date || !description || amount === undefined || !type) {
         return res.status(400).json({ error: 'Missing required fields' })
       }
@@ -391,9 +395,9 @@ async function startServer() {
         const histId = `hist_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
         await db.run(`
           INSERT INTO historical_transactions (
-            id, transaction_id, account_id, category_id, date, description, amount, type, is_suppressed, is_manual_edit, is_posted
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [histId, transactionId || null, accountId, categoryId, date, description, amount, type, isSuppressed ? 1 : 0, isManualEdit ? 1 : 0, isPosted !== undefined ? (isPosted ? 1 : 0) : 1])
+            id, transaction_id, account_id, category_id, date, description, amount, type, is_suppressed, is_manual_edit, is_posted, is_transfer, transfer_to_account_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [histId, transactionId || null, accountId, categoryId, date, description, amount, type, isSuppressed ? 1 : 0, isManualEdit ? 1 : 0, isPosted !== undefined ? (isPosted ? 1 : 0) : 1, isTransfer ? 1 : 0, transferToAccountId || null])
 
         const row = await db.get(`
           SELECT h.*, c.name AS category_name, c.color AS category_color,
@@ -411,25 +415,33 @@ async function startServer() {
 
     app.put('/api/history/:id', async (req: any, res: any) => {
       const { id } = req.params
-      const { accountId, categoryId, date, description, amount, type, isManualEdit, isPosted } = req.body
+      const { 
+        accountId, categoryId, date, description, amount, type, 
+        isPosted, isSuppressed, isTransfer, transferToAccountId, isManualEdit 
+      } = req.body
       try {
         // isManualEdit can be explicitly passed (e.g., for reset).
         // Default to 1 (true) when not provided to preserve existing behavior.
         const manualEditFlag = isManualEdit !== undefined ? (isManualEdit ? 1 : 0) : 1
         const result = await db.run(`
           UPDATE historical_transactions
-          SET account_id     = COALESCE(?, account_id),
-              category_id    = COALESCE(?, category_id),
-              date           = COALESCE(?, date),
-              description    = COALESCE(?, description),
-              amount         = COALESCE(?, amount),
-              type           = COALESCE(?, type),
-              is_manual_edit = ?,
-              is_posted      = COALESCE(?, is_posted)
+          SET 
+              account_id            = COALESCE(?, account_id),
+              category_id           = COALESCE(?, category_id),
+              date                  = COALESCE(?, date),
+              description           = COALESCE(?, description),
+              amount                = COALESCE(?, amount),
+              type                  = COALESCE(?, type),
+              is_transfer           = COALESCE(?, is_transfer),
+              transfer_to_account_id = COALESCE(?, transfer_to_account_id),
+              is_manual_edit        = ?,
+              is_posted             = COALESCE(?, is_posted)
           WHERE id = ?
         `, [
           accountId ?? null, categoryId ?? null, date ?? null,
           description ?? null, amount ?? null, type ?? null,
+          isTransfer !== undefined ? (isTransfer ? 1 : 0) : null,
+          transferToAccountId ?? null,
           manualEditFlag,
           isPosted !== undefined ? (isPosted ? 1 : 0) : null,
           id

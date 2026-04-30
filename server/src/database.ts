@@ -4,16 +4,32 @@ import path from 'path'
 
 // Resolve path to the server/database folder regardless of dist layout
 // (flat: dist/*.js  vs  nested: dist/server/src/*.js).
+// IMPORTANT: This must always return the SAME canonical path to avoid
+// accidentally creating or using a second empty database somewhere else.
 function resolveServerAsset(relative: string): string {
-  const candidates = [
-    path.join(__dirname, '..', relative),           // flat build
-    path.join(__dirname, '..', '..', '..', relative), // nested build
-    path.join(process.cwd(), relative),             // running from server/
-  ]
-  for (const c of candidates) {
-    if (existsSync(c)) return c
+  // Walk up from __dirname until we find the server directory by its package.json
+  let dir = __dirname
+  while (dir !== path.dirname(dir)) {
+    const pkgPath = path.join(dir, 'package.json')
+    if (existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+        if (pkg.name === 'budget-app-server') {
+          const resolved = path.join(dir, relative)
+          console.log(`[DB] Resolved asset "${relative}" -> ${resolved} (found server package.json in ${dir})`)
+          return resolved
+        }
+      } catch {
+        // not our package.json
+      }
+    }
+    dir = path.dirname(dir)
   }
-  return candidates[0]
+  // Fallback should never happen, but preserves old behavior with clear warning
+  const fallback = path.resolve(__dirname, '..', '..', '..')
+  const resolved = path.join(fallback, relative)
+  console.warn(`[DB] WARNING: Could not find server package.json. Fallback for "${relative}" -> ${resolved}`)
+  return resolved
 }
 
 export class Database {
@@ -54,6 +70,26 @@ export class Database {
       'historical_transactions',
       'is_posted',
       'INTEGER NOT NULL DEFAULT 1'
+    )
+    await this.ensureColumn(
+      'transactions',
+      'transfer_to_account_id',
+      'TEXT'
+    )
+    await this.ensureColumn(
+      'historical_transactions',
+      'transfer_to_account_id',
+      'TEXT'
+    )
+    await this.ensureColumn(
+      'transactions',
+      'is_transfer',
+      'INTEGER DEFAULT 0'
+    )
+    await this.ensureColumn(
+      'historical_transactions',
+      'is_transfer',
+      'INTEGER DEFAULT 0'
     )
 
     console.log('Database initialized successfully')
