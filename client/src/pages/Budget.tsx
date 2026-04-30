@@ -319,6 +319,8 @@ const Budget: React.FC = () => {
     categoryId: '',
     accountId: '',
     type: 'expense' as 'income' | 'expense' | 'administrative',
+    isTransfer: false,
+    transferToAccountId: '',
     startDate: '',
     frequency: {
       unit: 'months' as 'days' | 'weeks' | 'months' | 'years' | 'custom',
@@ -337,7 +339,9 @@ const Budget: React.FC = () => {
     startDate: formatDateForStorage(new Date()),
     categoryId: '',
     accountId: '',
-    type: 'expense' as 'income' | 'expense' | 'administrative'
+    type: 'expense' as 'income' | 'expense' | 'administrative',
+    isTransfer: false,
+    transferToAccountId: ''
   })
   const [manualForm, setManualForm] = useState({
     description: '',
@@ -400,14 +404,20 @@ const Budget: React.FC = () => {
     
     setAddingTransaction(true)
     try {
-      const transactionData = {
+      const transactionData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'> = {
         name: formData.name,
         amount: formData.type === 'expense' ? -Math.abs(Number(formData.amount)) : Math.abs(Number(formData.amount)),
-        frequency: formData.frequency,
+        frequency: {
+          value: Number(formData.frequency.value),
+          unit: formData.frequency.unit,
+          customPattern: formData.frequency.unit === 'custom' ? formData.frequency.customPattern : undefined
+        },
         startDate: createSafeDate(formData.startDate),
         categoryId: formData.categoryId,
         accountId: formData.accountId,
         type: formData.type,
+        isTransfer: formData.isTransfer,
+        transferToAccountId: formData.isTransfer ? formData.transferToAccountId : undefined,
         isActive: true
       }
       
@@ -425,7 +435,9 @@ const Budget: React.FC = () => {
         startDate: formatDateForStorage(new Date()),
         categoryId: formData.categoryId,
         accountId: formData.accountId,
-        type: formData.type
+        type: formData.type,
+        isTransfer: false,
+        transferToAccountId: ''
       })
       setFormErrors([])
       await loadData()
@@ -536,6 +548,8 @@ const Budget: React.FC = () => {
       categoryId: transaction.categoryId,
       accountId: transaction.accountId,
       type: transaction.type,
+      isTransfer: transaction.isTransfer || false,
+      transferToAccountId: transaction.transferToAccountId || '',
       startDate: formatDateForInput(transaction.startDate), // Use formatDateForInput to avoid timezone issues
       frequency: {
         unit: transaction.frequency.unit,
@@ -555,6 +569,8 @@ const Budget: React.FC = () => {
       categoryId: '',
       accountId: '',
       type: 'expense' as 'income' | 'expense' | 'administrative',
+      isTransfer: false,
+      transferToAccountId: '',
       startDate: '',
       frequency: {
         unit: 'months',
@@ -592,6 +608,8 @@ const Budget: React.FC = () => {
         categoryId: editFormData.categoryId,
         accountId: editFormData.accountId,
         type: editFormData.type,
+        isTransfer: editFormData.isTransfer,
+        transferToAccountId: editFormData.isTransfer ? editFormData.transferToAccountId : undefined,
         startDate: createSafeDate(editFormData.startDate),
         frequency: editFormData.frequency,
         isActive: true // Ensure the transaction remains active
@@ -1600,7 +1618,9 @@ const Budget: React.FC = () => {
                 startDate: formatDateForStorage(new Date()),
                 categoryId: formData.categoryId,
                 accountId: formData.accountId,
-                type: formData.type
+                type: formData.type,
+                isTransfer: false,
+                transferToAccountId: ''
               })
               setFormErrors([])
             }}
@@ -1678,6 +1698,42 @@ const Budget: React.FC = () => {
             </div>
           </div>
 
+          {/* Transfer controls */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex items-center">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="form-checkbox h-4 w-4 text-blue-600"
+                  checked={formData.isTransfer}
+                  onChange={(e) => setFormData(prev => ({ ...prev, isTransfer: e.target.checked, transferToAccountId: e.target.checked ? prev.transferToAccountId : '' }))}
+                  disabled={addingTransaction}
+                />
+                <span className="text-sm font-medium text-gray-700">Transfer</span>
+              </label>
+            </div>
+            {formData.isTransfer && (
+              <div>
+                <label className="form-label">Transfer To Account</label>
+                <select
+                  className="form-input"
+                  value={formData.transferToAccountId}
+                  onChange={(e) => setFormData(prev => ({ ...prev, transferToAccountId: e.target.value }))}
+                  disabled={addingTransaction}
+                >
+                  <option value="">Select destination account</option>
+                  {accounts
+                    .filter(account => account.id !== formData.accountId)
+                    .map(account => (
+                      <option key={account.id} value={account.id}>
+                        {account.name} (${account.currentBalance.toFixed(2)})
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+          </div>
+
           <div>
             <label className="form-label">Frequency</label>
             <FrequencySelector
@@ -1728,7 +1784,9 @@ const Budget: React.FC = () => {
                   startDate: formatDateForStorage(new Date()),
                   categoryId: formData.categoryId,
                   accountId: formData.accountId,
-                  type: formData.type
+                  type: formData.type,
+                  isTransfer: false,
+                  transferToAccountId: ''
                 })
                 setFormErrors([])
               }}
@@ -2098,6 +2156,37 @@ const Budget: React.FC = () => {
                     ))}
                   </select>
                 </div>
+
+                {/* Transfer controls */}
+                <div className="flex items-center">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 text-blue-600"
+                      checked={editFormData.isTransfer}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, isTransfer: e.target.checked, transferToAccountId: e.target.checked ? prev.transferToAccountId : '' }))}
+                    />
+                    <span className="text-sm font-medium text-gray-700">Transfer</span>
+                  </label>
+                </div>
+                {editFormData.isTransfer && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Transfer To Account</label>
+                    <select
+                      className="form-input"
+                      value={editFormData.transferToAccountId}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, transferToAccountId: e.target.value }))}
+                    >
+                      <option value="">Select destination account</option>
+                      {accounts
+                        .filter(account => account.id !== editFormData.accountId)
+                        .map(account => (
+                          <option key={account.id} value={account.id}>{account.name}</option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
                   <select

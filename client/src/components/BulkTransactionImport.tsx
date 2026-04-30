@@ -17,6 +17,8 @@ interface BulkTransaction {
   categoryId: string
   accountId: string
   startDate: string
+  isTransfer: boolean
+  transferToAccountId: string
 }
 
 const BulkTransactionEntry: React.FC = () => {
@@ -35,7 +37,9 @@ const BulkTransactionEntry: React.FC = () => {
       },
       categoryId: '',
       accountId: '',
-      startDate: formatDateForStorage(new Date())
+      startDate: formatDateForStorage(new Date()),
+      isTransfer: false,
+      transferToAccountId: ''
     }
   ])
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -69,7 +73,9 @@ const BulkTransactionEntry: React.FC = () => {
           },
           categoryId: firstCategory?.id || '',
           accountId: '',
-          startDate: formatDateForStorage(new Date())
+          startDate: formatDateForStorage(new Date()),
+          isTransfer: false,
+          transferToAccountId: ''
         }])
       }
     } catch (error) {
@@ -93,7 +99,9 @@ const BulkTransactionEntry: React.FC = () => {
       },
       categoryId: defaultCategoryId,
       accountId: '',
-      startDate: formatDateForStorage(new Date())
+      startDate: formatDateForStorage(new Date()),
+      isTransfer: false,
+      transferToAccountId: ''
     }])
   }
 
@@ -126,6 +134,9 @@ const BulkTransactionEntry: React.FC = () => {
       if (!transaction.accountId) {
         validationErrors.push(`Row ${index + 1}: Account is required`)
       }
+      if (transaction.isTransfer && !transaction.transferToAccountId) {
+        validationErrors.push(`Row ${index + 1}: Transfer destination account is required`)
+      }
     })
     
     setErrors(validationErrors)
@@ -151,7 +162,9 @@ const BulkTransactionEntry: React.FC = () => {
           categoryId: transaction.categoryId,
           accountId: transaction.accountId,
           type: transaction.type,
-          isActive: true
+          isActive: true,
+          isTransfer: transaction.isTransfer,
+          transferToAccountId: transaction.isTransfer ? transaction.transferToAccountId : undefined
         }
         
         return transactionsApi.create(transactionData)
@@ -173,11 +186,14 @@ const BulkTransactionEntry: React.FC = () => {
         },
         categoryId: defaultCategoryId,
         accountId: '',
-        startDate: formatDateForStorage(new Date())
+        startDate: formatDateForStorage(new Date()),
+        isTransfer: false,
+        transferToAccountId: ''
       }])
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating transactions:', error)
-      setErrors(['Failed to create some transactions. Please try again.'])
+      const serverMessage = error?.response?.data?.error || error?.response?.data?.details?.join(', ') || error?.message
+      setErrors([serverMessage || 'Failed to create some transactions. Please try again.'])
     } finally {
       setIsSubmitting(false)
     }
@@ -316,6 +332,38 @@ const BulkTransactionEntry: React.FC = () => {
                     ))}
                   </select>
                 </div>
+                
+                <div className="flex items-center lg:col-span-2 xl:col-span-3">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox"
+                      checked={transaction.isTransfer}
+                      onChange={(e) => updateTransaction(index, 'isTransfer', e.target.checked)}
+                      disabled={isSubmitting}
+                    />
+                    <span className="text-sm font-medium text-gray-700">Transfer</span>
+                  </label>
+                </div>
+                
+                {transaction.isTransfer && (
+                  <div>
+                    <label className="form-label text-sm">Transfer To Account</label>
+                    <select
+                      className="form-input text-sm"
+                      value={transaction.transferToAccountId}
+                      onChange={(e) => updateTransaction(index, 'transferToAccountId', e.target.value)}
+                      disabled={isSubmitting}
+                    >
+                      <option value="">Select destination account</option>
+                      {accounts.filter(a => a.id !== transaction.accountId).map(account => (
+                        <option key={account.id} value={account.id}>
+                          {account.name} (${account.currentBalance.toFixed(2)})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
               
               <div className="mt-3">
@@ -358,7 +406,9 @@ const BulkTransactionEntry: React.FC = () => {
                   },
                   categoryId: defaultCategoryId,
                   accountId: defaultAccountId,
-                  startDate: formatDateForStorage(new Date())
+                  startDate: formatDateForStorage(new Date()),
+                  isTransfer: false,
+                  transferToAccountId: ''
                 }])
                 setErrors([])
                 setSuccessCount(0)

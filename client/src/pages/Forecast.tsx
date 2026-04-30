@@ -39,6 +39,8 @@ const Forecast: React.FC = () => {
     accountId: '',
     categoryId: '',
     type: 'expense' as 'income' | 'expense' | 'administrative',
+    isTransfer: false,
+    transferToAccountId: '',
   })
   
   // Load saved start date from localStorage, or default to today's date
@@ -306,6 +308,8 @@ const Forecast: React.FC = () => {
             accountName: override
               ? (accounts.find(a => a.id === override.accountId)?.name || 'Unknown Account')
               : (account?.name || 'Unknown Account'),
+            isTransfer: tx.isTransfer || false,
+            transferToAccountId: tx.transferToAccountId,
             isOverride: false,
             isPosted: currentDate < new Date(),
             isEdited: !!override,
@@ -341,15 +345,16 @@ const Forecast: React.FC = () => {
           categoryColor: category?.color || '#6B7280',
           accountId: h.accountId,
           accountName: account?.name || 'Unknown Account',
-          isOverride: false,
-          isPosted: hDate < new Date(),
+          isTransfer: h.isTransfer || false,
+          transferToAccountId: h.transferToAccountId,
+          isOverride: true,
+          isPosted: h.isPosted ?? true,
           isEdited: false,
-          originalAmount: h.amount,
+          originalAmount: h.amount
         }
         forecastTransactions.push(manualTx)
       }
     })
-
     return forecastTransactions.sort((a, b) => a.date.getTime() - b.date.getTime())
   }
 
@@ -721,6 +726,8 @@ const Forecast: React.FC = () => {
         description: manualForm.description,
         amount: finalAmount,
         type: manualForm.type,
+        isTransfer: manualForm.isTransfer,
+        transferToAccountId: manualForm.isTransfer ? manualForm.transferToAccountId : undefined,
         isPosted: false,
       })
 
@@ -732,6 +739,8 @@ const Forecast: React.FC = () => {
         accountId: '',
         categoryId: '',
         type: 'expense',
+        isTransfer: false,
+        transferToAccountId: '',
       })
       setIsAddingManual(false)
       await loadForecastData({ silent: true })
@@ -959,6 +968,34 @@ const Forecast: React.FC = () => {
                 ))}
               </select>
             </div>
+            <div className="flex items-center">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="form-checkbox h-4 w-4 text-blue-600"
+                  checked={manualForm.isTransfer}
+                  onChange={(e) => setManualForm(prev => ({ ...prev, isTransfer: e.target.checked, transferToAccountId: e.target.checked ? prev.transferToAccountId : '' }))}
+                />
+                <span className="text-sm font-medium text-gray-700">Transfer</span>
+              </label>
+            </div>
+            {manualForm.isTransfer && (
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Transfer To Account</label>
+                <select
+                  className="input w-full"
+                  value={manualForm.transferToAccountId}
+                  onChange={e => setManualForm(prev => ({ ...prev, transferToAccountId: e.target.value }))}
+                >
+                  <option value="">Select destination account</option>
+                  {accounts
+                    .filter(a => a.id !== manualForm.accountId)
+                    .map(a => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-xs text-gray-600 mb-1">Category</label>
               <CategorySelector

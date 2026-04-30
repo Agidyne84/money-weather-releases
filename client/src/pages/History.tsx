@@ -11,6 +11,8 @@ interface EditBuffer {
   accountId: string
   categoryId: string
   type: 'income' | 'expense' | 'administrative'
+  isTransfer: boolean
+  transferToAccountId: string
 }
 
 const emptyBuffer = (row?: HistoryRow): EditBuffer => ({
@@ -20,6 +22,8 @@ const emptyBuffer = (row?: HistoryRow): EditBuffer => ({
   accountId: row?.accountId ?? '',
   categoryId: row?.categoryId ?? '',
   type: row?.type ?? 'expense',
+  isTransfer: row?.isTransfer ?? false,
+  transferToAccountId: row?.transferToAccountId ?? '',
 })
 
 const History: React.FC = () => {
@@ -139,6 +143,8 @@ const History: React.FC = () => {
           description: buffer.description.trim(),
           amount: signed,
           type: buffer.type,
+          isTransfer: buffer.isTransfer,
+          transferToAccountId: buffer.isTransfer ? buffer.transferToAccountId : undefined,
         })
       } else if (editingId) {
         await historyApi.update(editingId, {
@@ -148,6 +154,8 @@ const History: React.FC = () => {
           description: buffer.description.trim(),
           amount: signed,
           type: buffer.type,
+          isTransfer: buffer.isTransfer,
+          transferToAccountId: buffer.isTransfer ? buffer.transferToAccountId : undefined,
         })
       }
       cancel()
@@ -592,6 +600,34 @@ const History: React.FC = () => {
                                   ))}
                                 </select>
                               </div>
+                              <div className="flex items-center">
+                                <label className="flex items-center space-x-2 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    className="form-checkbox h-4 w-4 text-blue-600"
+                                    checked={buffer.isTransfer}
+                                    onChange={(e) => setBuffer({ ...buffer, isTransfer: e.target.checked, transferToAccountId: e.target.checked ? buffer.transferToAccountId : '' })}
+                                  />
+                                  <span className="text-sm font-medium text-gray-700">Transfer</span>
+                                </label>
+                              </div>
+                              {buffer.isTransfer && (
+                                <div className="flex flex-col min-w-[160px]">
+                                  <label className="text-xs text-gray-600 mb-1">Transfer To Account</label>
+                                  <select
+                                    className="input-field text-sm"
+                                    value={buffer.transferToAccountId}
+                                    onChange={e => setBuffer({ ...buffer, transferToAccountId: e.target.value })}
+                                  >
+                                    <option value="">Select destination account</option>
+                                    {accounts
+                                      .filter(a => a.id !== buffer.accountId)
+                                      .map(a => (
+                                        <option key={a.id} value={a.id}>{a.name}</option>
+                                      ))}
+                                  </select>
+                                </div>
+                              )}
                               <div className="flex flex-col min-w-[160px]">
                                 <label className="text-xs text-gray-600 mb-1">Category</label>
                                 <select
@@ -678,6 +714,29 @@ const EditForm: React.FC<EditFormProps> = ({ buffer, setBuffer, accounts, catego
           {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </div>
+      <div className="flex items-center">
+        <label className="flex items-center space-x-2 cursor-pointer">
+          <input
+            type="checkbox"
+            className="form-checkbox h-4 w-4 text-blue-600"
+            checked={buffer.isTransfer}
+            onChange={e => update('isTransfer', e.target.checked)}
+          />
+          <span className="text-sm font-medium text-gray-700">Transfer</span>
+        </label>
+      </div>
+      {buffer.isTransfer && (
+        <div>
+          <label className="block text-xs text-gray-600 mb-1">Transfer To Account</label>
+          <select className="input w-full" value={buffer.transferToAccountId}
+                  onChange={e => update('transferToAccountId', e.target.value)}>
+            <option value="">— select —</option>
+            {accounts
+              .filter(a => a.id !== buffer.accountId)
+              .map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+      )}
       <div>
         <label className="block text-xs text-gray-600 mb-1">Category</label>
         <select className="input w-full" value={buffer.categoryId}
