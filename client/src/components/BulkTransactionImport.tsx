@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Category, Account } from '../types'
-import { categoriesApi, transactionsApi, accountsApi } from '../services/api'
+import { categoriesApi, transactionsApi, accountsApi } from '../services/database'
 import { createSafeDate, formatDateForStorage } from '../utils/dateUtils'
 import FrequencySelector from './FrequencySelector'
 import CategorySelector from './CategorySelector'
@@ -8,7 +8,7 @@ import CategorySelector from './CategorySelector'
 interface BulkTransaction {
   name: string
   amount: string
-  type: 'income' | 'expense'
+  type: 'income' | 'expense' | 'administrative' | ''
   frequency: {
     unit: 'days' | 'weeks' | 'months' | 'years'
     value: number
@@ -29,7 +29,7 @@ const BulkTransactionEntry: React.FC = () => {
     {
       name: '',
       amount: '',
-      type: 'expense',
+      type: '',
       frequency: {
         unit: 'months',
         value: 1,
@@ -59,19 +59,18 @@ const BulkTransactionEntry: React.FC = () => {
       setCategories(categoriesData)
       setAccounts(accountsData)
       
-      // Set default values for first transaction
+      // Form defaults intentionally left empty for type/account/category so user must select
       if (accountsData.length > 0 && categoriesData.length > 0) {
-        const firstCategory = categoriesData.find(c => !c.parentId)
-        setTransactions([{ 
+        setTransactions([{
           name: '',
           amount: '',
-          type: 'expense',
+          type: '',
           frequency: {
             unit: 'months',
             value: 1,
             customPattern: undefined
           },
-          categoryId: firstCategory?.id || '',
+          categoryId: '',
           accountId: '',
           startDate: formatDateForStorage(new Date()),
           isTransfer: false,
@@ -86,18 +85,16 @@ const BulkTransactionEntry: React.FC = () => {
   }
 
   const addTransactionRow = () => {
-    const defaultCategoryId = categories.find(c => !c.parentId)?.id || ''
-    
     setTransactions(prev => [...prev, {
       name: '',
       amount: '',
-      type: 'expense',
+      type: '',
       frequency: {
         unit: 'months',
         value: 1,
         customPattern: undefined
       },
-      categoryId: defaultCategoryId,
+      categoryId: '',
       accountId: '',
       startDate: formatDateForStorage(new Date()),
       isTransfer: false,
@@ -117,7 +114,7 @@ const BulkTransactionEntry: React.FC = () => {
 
   const validateTransactions = (): boolean => {
     const validationErrors: string[] = []
-    
+
     transactions.forEach((transaction, index) => {
       if (!transaction.name.trim()) {
         validationErrors.push(`Row ${index + 1}: Transaction name is required`)
@@ -128,17 +125,29 @@ const BulkTransactionEntry: React.FC = () => {
       if (Number(transaction.amount) === 0) {
         validationErrors.push(`Row ${index + 1}: Amount cannot be zero`)
       }
+      if (!transaction.startDate) {
+        validationErrors.push(`Row ${index + 1}: Start date is required`)
+      }
+      if (!transaction.type) {
+        validationErrors.push(`Row ${index + 1}: Type is required`)
+      }
       if (!transaction.categoryId) {
         validationErrors.push(`Row ${index + 1}: Category is required`)
       }
       if (!transaction.accountId) {
         validationErrors.push(`Row ${index + 1}: Account is required`)
       }
+      if (!transaction.frequency || transaction.frequency.value <= 0) {
+        validationErrors.push(`Row ${index + 1}: Frequency value must be greater than 0`)
+      }
+      if ((transaction.frequency?.unit as any) === 'custom' && !transaction.frequency?.customPattern?.trim()) {
+        validationErrors.push(`Row ${index + 1}: Custom frequency pattern is required`)
+      }
       if (transaction.isTransfer && !transaction.transferToAccountId) {
         validationErrors.push(`Row ${index + 1}: Transfer destination account is required`)
       }
     })
-    
+
     setErrors(validationErrors)
     return validationErrors.length === 0
   }
@@ -156,12 +165,14 @@ const BulkTransactionEntry: React.FC = () => {
       const promises = transactions.map(async (transaction) => {
         const transactionData = {
           name: transaction.name,
-          amount: transaction.type === 'expense' ? -Math.abs(Number(transaction.amount)) : Math.abs(Number(transaction.amount)),
+          amount: transaction.type === 'expense' ? -Math.abs(Number(transaction.amount)) :
+                  transaction.type === 'administrative' ? Number(transaction.amount) :
+                  Math.abs(Number(transaction.amount)),
           frequency: transaction.frequency,
           startDate: createSafeDate(transaction.startDate),
           categoryId: transaction.categoryId,
           accountId: transaction.accountId,
-          type: transaction.type,
+          type: transaction.type as 'income' | 'expense' | 'administrative',
           isActive: true,
           isTransfer: transaction.isTransfer,
           transferToAccountId: transaction.isTransfer ? transaction.transferToAccountId : undefined
@@ -174,17 +185,16 @@ const BulkTransactionEntry: React.FC = () => {
       setSuccessCount(transactions.length)
       
       // Reset form
-      const defaultCategoryId = categories.find(c => !c.parentId)?.id || ''
       setTransactions([{
         name: '',
         amount: '',
-        type: 'expense',
+        type: '',
         frequency: {
           unit: 'months',
           value: 1,
           customPattern: undefined
         },
-        categoryId: defaultCategoryId,
+        categoryId: '',
         accountId: '',
         startDate: formatDateForStorage(new Date()),
         isTransfer: false,
@@ -253,7 +263,7 @@ const BulkTransactionEntry: React.FC = () => {
               
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
                 <div>
-                  <label className="form-label text-sm">Name</label>
+                  <label className="form-label text-sm">Name <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     className="form-input text-sm"
@@ -265,7 +275,7 @@ const BulkTransactionEntry: React.FC = () => {
                 </div>
                 
                 <div>
-                  <label className="form-label text-sm">Amount</label>
+                  <label className="form-label text-sm">Amount <span className="text-red-500">*</span></label>
                   <input
                     type="number"
                     className="form-input text-sm"
@@ -278,13 +288,14 @@ const BulkTransactionEntry: React.FC = () => {
                 </div>
                 
                 <div>
-                  <label className="form-label text-sm">Type</label>
+                  <label className="form-label text-sm">Type <span className="text-red-500">*</span></label>
                   <select
                     className="form-input text-sm"
                     value={transaction.type}
-                    onChange={(e) => updateTransaction(index, 'type', e.target.value as 'income' | 'expense' | 'administrative')}
+                    onChange={(e) => updateTransaction(index, 'type', e.target.value as 'income' | 'expense' | 'administrative' | '')}
                     disabled={isSubmitting}
                   >
+                    <option value="">-- Select --</option>
                     <option value="expense">Expense</option>
                     <option value="income">Income</option>
                     <option value="administrative">Administrative</option>
@@ -292,7 +303,7 @@ const BulkTransactionEntry: React.FC = () => {
                 </div>
                 
                 <div>
-                  <label className="form-label text-sm">Start Date</label>
+                  <label className="form-label text-sm">Start Date <span className="text-red-500">*</span></label>
                   <input
                     type="date"
                     className="form-input text-sm"
@@ -303,7 +314,7 @@ const BulkTransactionEntry: React.FC = () => {
                 </div>
                 
                 <div>
-                  <label className="form-label text-sm">Category</label>
+                  <label className="form-label text-sm">Category <span className="text-red-500">*</span></label>
                   <CategorySelector
                     categories={categories}
                     selectedCategoryId={transaction.categoryId}
@@ -317,7 +328,7 @@ const BulkTransactionEntry: React.FC = () => {
                 </div>
                 
                 <div>
-                  <label className="form-label text-sm">Account</label>
+                  <label className="form-label text-sm">Account <span className="text-red-500">*</span></label>
                   <select
                     className="form-input text-sm"
                     value={transaction.accountId}
@@ -348,7 +359,7 @@ const BulkTransactionEntry: React.FC = () => {
                 
                 {transaction.isTransfer && (
                   <div>
-                    <label className="form-label text-sm">Transfer To Account</label>
+                    <label className="form-label text-sm">Transfer To Account <span className="text-red-500">*</span></label>
                     <select
                       className="form-input text-sm"
                       value={transaction.transferToAccountId}
@@ -367,7 +378,7 @@ const BulkTransactionEntry: React.FC = () => {
               </div>
               
               <div className="mt-3">
-                <label className="form-label text-sm">Frequency</label>
+                <label className="form-label text-sm">Frequency <span className="text-red-500">*</span></label>
                 <FrequencySelector
                   value={transaction.frequency}
                   onChange={(frequency) => updateTransaction(index, 'frequency', frequency)}
@@ -393,19 +404,17 @@ const BulkTransactionEntry: React.FC = () => {
               type="button"
               className="btn-secondary w-full sm:w-auto"
               onClick={() => {
-                const defaultAccountId = ''
-                const defaultCategoryId = categories.find(c => !c.parentId)?.id || ''
                 setTransactions([{
                   name: '',
                   amount: '',
-                  type: 'expense',
+                  type: '',
                   frequency: {
                     unit: 'months',
                     value: 1,
                     customPattern: undefined
                   },
-                  categoryId: defaultCategoryId,
-                  accountId: defaultAccountId,
+                  categoryId: '',
+                  accountId: '',
                   startDate: formatDateForStorage(new Date()),
                   isTransfer: false,
                   transferToAccountId: ''
@@ -420,8 +429,18 @@ const BulkTransactionEntry: React.FC = () => {
             <button
               type="button"
               onClick={handleSubmit}
-              className="btn-primary w-full sm:w-auto"
-              disabled={isSubmitting || transactions.every(t => !t.name.trim() && !t.amount)}
+              className="btn-primary w-full sm:w-auto disabled:opacity-50"
+              disabled={isSubmitting || transactions.some(t =>
+                !t.name.trim() ||
+                !t.amount || isNaN(Number(t.amount)) || Number(t.amount) === 0 ||
+                !t.startDate ||
+                !t.type ||
+                !t.categoryId ||
+                !t.accountId ||
+                !t.frequency || t.frequency.value <= 0 ||
+                ((t.frequency.unit as any) === 'custom' && !t.frequency.customPattern?.trim()) ||
+                (t.isTransfer && !t.transferToAccountId)
+              )}
             >
               {isSubmitting ? 'Creating...' : `Create ${transactions.length} Transaction${transactions.length > 1 ? 's' : ''}`}
             </button>

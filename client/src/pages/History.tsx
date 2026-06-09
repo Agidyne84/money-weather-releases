@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react'
-import { Account, Category } from '../types'
-import { accountsApi, categoriesApi, historyApi, transactionsApi, HistoryRow } from '../services/api'
+import { useLocation } from 'react-router-dom'
+import { Account, Category, ForecastTransaction } from '../types'
+import { accountsApi, categoriesApi, historyApi, transactionsApi, forecastApi, HistoryRow } from '../services/database'
 import { formatDateForDisplay, formatDateForInput, formatDateForStorage } from '../utils/dateUtils'
 import CategorySelector from '../components/CategorySelector'
+import BankImportCard from '../components/BankImportCard'
 
 interface EditBuffer {
   description: string
@@ -10,7 +12,7 @@ interface EditBuffer {
   date: string
   accountId: string
   categoryId: string
-  type: 'income' | 'expense' | 'administrative'
+  type: 'income' | 'expense' | 'administrative' | ''
   isTransfer: boolean
   transferToAccountId: string
 }
@@ -21,52 +23,84 @@ const emptyBuffer = (row?: HistoryRow): EditBuffer => ({
   date: row ? formatDateForInput(row.date) : formatDateForInput(new Date()),
   accountId: row?.accountId ?? '',
   categoryId: row?.categoryId ?? '',
-  type: row?.type ?? 'expense',
+  type: row?.type ?? '',
   isTransfer: row?.isTransfer ?? false,
   transferToAccountId: row?.transferToAccountId ?? '',
 })
 
 const History: React.FC = () => {
+  const location = useLocation()
+  const initState = (location.state as { categoryId?: string; startDate?: string; endDate?: string } | null) ?? {}
+
   const [rows, setRows] = useState<HistoryRow[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const [filterStart, setFilterStart] = useState<string>('')
-  const [filterEnd, setFilterEnd] = useState<string>('')
+  const [filterStart, setFilterStart] = useState<string>(initState.startDate ?? '')
+  const [filterEnd, setFilterEnd] = useState<string>(initState.endDate ?? '')
   const [filterAccount, setFilterAccount] = useState<string>('')
-  const [filterCategory, setFilterCategory] = useState<string>('')
+  const [filterCategory, setFilterCategory] = useState<string>(initState.categoryId ?? '')
+
+  // Client-side filters (applied on top of server results)
+  const [filterType, setFilterType] = useState<string>('')
+  const [filterMinAmt, setFilterMinAmt] = useState<string>('')
+  const [filterMaxAmt, setFilterMaxAmt] = useState<string>('')
+  const [filterDescription, setFilterDescription] = useState<string>('')
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [buffer, setBuffer] = useState<EditBuffer>(emptyBuffer())
   const [adding, setAdding] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   // Selection state for Return Selected functionality
   const [selectedRows, setSelectedRows] = useState<string[]>([])
 
   const [originalTransactions, setOriginalTransactions] = useState<any[]>([])
+  const [forecastTransactions, setForecastTransactions] = useState<ForecastTransaction[]>([])
+  const [fullHistoryData, setFullHistoryData] = useState<any[]>([])
 
-  const loadAll = async () => {
+  const loadAll = async (overrides?: { start?: string; end?: string; account?: string; category?: string }) => {
+    const start = overrides && 'start' in overrides ? overrides.start : filterStart
+    const end = overrides && 'end' in overrides ? overrides.end : filterEnd
+    const account = overrides && 'account' in overrides ? overrides.account : filterAccount
+    const category = overrides && 'category' in overrides ? overrides.category : filterCategory
     setLoading(true)
     setError(null)
     try {
-      const [hist, accs, cats, txs] = await Promise.all([
+      const [hist, accs, cats, txs, ftxs, fullHist] = await Promise.all([
         historyApi.getAll({
-          startDate: filterStart || undefined,
-          endDate: filterEnd || undefined,
-          accountId: filterAccount || undefined,
-          categoryId: filterCategory || undefined,
+          startDate: start || undefined,
+          endDate: end || undefined,
+          accountId: account || undefined,
+          categoryId: category || undefined,
           limit: 1000,
+          includeUnposted: false,
         }),
         accountsApi.getAll(),
         categoriesApi.getAll(),
         transactionsApi.getAll(1000, 0),
+        forecastApi.getForecastTransactions(),
+        historyApi.getAll({
+          limit: 1000,
+          includeUnposted: true,
+          includeSuppressed: true,
+          includeExcluded: true,
+        }),
       ])
-      setRows(hist)
+      // Defensive filter: ensure unposted rows never appear on History
+      const postedOnly = hist.filter(h => h.isPosted !== false)
+      setRows(postedOnly)
       setAccounts(accs)
       setCategories(cats)
       setOriginalTransactions(txs)
+      // Parse date strings from server into Date objects
+      setForecastTransactions(ftxs.map((ftx: any) => ({
+        ...ftx,
+        date: new Date(ftx.date),
+      })))
+      setFullHistoryData(fullHist)
     } catch (err: any) {
       setError(err?.response?.data?.error || err?.message || 'Failed to load history')
     } finally {
@@ -86,12 +120,26 @@ const History: React.FC = () => {
     setFilterEnd('')
     setFilterAccount('')
     setFilterCategory('')
-    // Load after state flush
-    setTimeout(() => loadAll(), 0)
+    setFilterType('')
+    setFilterMinAmt('')
+    setFilterMaxAmt('')
+    setFilterDescription('')
+    loadAll({ start: '', end: '', account: '', category: '' })
   }
+
+  // Client-side filtering applied on top of server results
+  const filteredRows = rows.filter(row => {
+    if (filterType && row.type !== filterType) return false
+    const absAmt = Math.abs(row.amount)
+    if (filterMinAmt !== '' && !isNaN(Number(filterMinAmt)) && absAmt < Number(filterMinAmt)) return false
+    if (filterMaxAmt !== '' && !isNaN(Number(filterMaxAmt)) && absAmt > Number(filterMaxAmt)) return false
+    if (filterDescription && !row.description.toLowerCase().includes(filterDescription.toLowerCase())) return false
+    return true
+  })
 
   const startEdit = (row: HistoryRow) => {
     setAdding(false)
+    setExpandedId(null)
     setEditingId(row.id)
     setBuffer(emptyBuffer(row))
   }
@@ -103,13 +151,7 @@ const History: React.FC = () => {
     } else {
       setEditingId(null)
       setAdding(true)
-      const defaultAccount = accounts[0]?.id ?? ''
-      const defaultCategory = categories[0]?.id ?? ''
-      setBuffer({
-        ...emptyBuffer(),
-        accountId: defaultAccount,
-        categoryId: defaultCategory,
-      })
+      setBuffer(emptyBuffer())
     }
   }
 
@@ -129,11 +171,13 @@ const History: React.FC = () => {
       alert('Amount must be a non-zero number')
       return
     }
-    if (!buffer.accountId || !buffer.categoryId) {
-      alert('Account and category are required')
+    if (!buffer.accountId || !buffer.categoryId || !buffer.type) {
+      alert('Please fill in all required fields')
       return
     }
-    const signed = buffer.type === 'expense' ? -Math.abs(amt) : Math.abs(amt)
+    const signed = buffer.type === 'expense' ? -Math.abs(amt) :
+                   buffer.type === 'administrative' ? amt :
+                   Math.abs(amt)
     try {
       if (adding) {
         await historyApi.create({
@@ -142,7 +186,7 @@ const History: React.FC = () => {
           date: buffer.date,
           description: buffer.description.trim(),
           amount: signed,
-          type: buffer.type,
+          type: buffer.type as 'income' | 'expense' | 'administrative',
           isTransfer: buffer.isTransfer,
           transferToAccountId: buffer.isTransfer ? buffer.transferToAccountId : undefined,
         })
@@ -153,7 +197,7 @@ const History: React.FC = () => {
           date: buffer.date,
           description: buffer.description.trim(),
           amount: signed,
-          type: buffer.type,
+          type: buffer.type as 'income' | 'expense' | 'administrative',
           isTransfer: buffer.isTransfer,
           transferToAccountId: buffer.isTransfer ? buffer.transferToAccountId : undefined,
         })
@@ -186,7 +230,7 @@ const History: React.FC = () => {
       alert('Could not find the source transaction to reset values.')
       return
     }
-    const ok = window.confirm(`Reset "${row.description}" back to the original transaction values?`)
+    const ok = window.confirm(`Reset "${row.description}" back to the original (Budgeted) transaction values?`)
     if (!ok) return
     try {
       await historyApi.update(row.id, {
@@ -213,7 +257,7 @@ const History: React.FC = () => {
   }
 
   const selectAllRows = () => {
-    setSelectedRows(rows.map(r => r.id))
+    setSelectedRows(filteredRows.map(r => r.id))
   }
 
   const clearSelection = () => {
@@ -273,8 +317,20 @@ const History: React.FC = () => {
         <p className="text-sm text-gray-500">Posted &amp; archived transactions. Return Selected moves rows back to Forecast.</p>
       </div>
 
+      {/* Import Bank Data */}
+      <BankImportCard
+        accounts={accounts}
+        budgetTransactions={originalTransactions}
+        forecastTransactions={forecastTransactions}
+        historyData={fullHistoryData}
+        onImportComplete={() => loadAll()}
+        onHistoryChange={() => loadAll()}
+        categories={categories}
+      />
+
       {/* Filter bar */}
-      <div className="card p-4">
+      <div className="card p-4 space-y-3">
+        {/* Row 1: server-side filters + Apply/Clear */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           <div>
             <label className="block text-xs text-gray-600 mb-1">From</label>
@@ -303,6 +359,56 @@ const History: React.FC = () => {
             <button onClick={clearFilters} className="btn-secondary text-xs flex-1">Clear</button>
           </div>
         </div>
+        {/* Row 2: client-side filters (instant, no Apply needed) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-gray-100">
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Description</label>
+            <input
+              type="text"
+              className="input w-full"
+              placeholder="Search…"
+              value={filterDescription}
+              onChange={e => setFilterDescription(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Type</label>
+            <select className="input w-full" value={filterType} onChange={e => setFilterType(e.target.value)}>
+              <option value="">All</option>
+              <option value="income">Income</option>
+              <option value="expense">Expense</option>
+              <option value="administrative">Administrative</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Min Amount ($)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input w-full"
+              placeholder="0.00"
+              value={filterMinAmt}
+              onChange={e => setFilterMinAmt(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Max Amount ($)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input w-full"
+              placeholder="Any"
+              value={filterMaxAmt}
+              onChange={e => setFilterMaxAmt(e.target.value)}
+            />
+          </div>
+        </div>
+        {/* Row count */}
+        <p className="text-xs text-gray-500 pt-1">
+          Showing <span className="font-semibold text-gray-700">{filteredRows.length}</span> of <span className="font-semibold text-gray-700">{rows.length}</span> rows
+        </p>
       </div>
 
       {/* Table */}
@@ -329,7 +435,7 @@ const History: React.FC = () => {
         {adding && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 p-4 bg-gray-50 rounded-lg mb-4">
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Date</label>
+              <label className="block text-xs text-gray-600 mb-1">Date <span className="text-red-500">*</span></label>
               <input
                 type="date"
                 className="input w-full"
@@ -338,7 +444,7 @@ const History: React.FC = () => {
               />
             </div>
             <div className="lg:col-span-2">
-              <label className="block text-xs text-gray-600 mb-1">Description</label>
+              <label className="block text-xs text-gray-600 mb-1">Description <span className="text-red-500">*</span></label>
               <input
                 type="text"
                 className="input w-full"
@@ -348,7 +454,7 @@ const History: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Amount</label>
+              <label className="block text-xs text-gray-600 mb-1">Amount <span className="text-red-500">*</span></label>
               <input
                 type="number"
                 step="0.01"
@@ -363,15 +469,16 @@ const History: React.FC = () => {
               <select
                 className="input w-full"
                 value={buffer.type}
-                onChange={e => setBuffer({ ...buffer, type: e.target.value as 'income' | 'expense' | 'administrative' })}
+                onChange={e => setBuffer({ ...buffer, type: e.target.value as 'income' | 'expense' | 'administrative' | '' })}
               >
+                <option value="">-- Select --</option>
                 <option value="income">Income</option>
                 <option value="expense">Expense</option>
                 <option value="administrative">Administrative</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Account</label>
+              <label className="block text-xs text-gray-600 mb-1">Account <span className="text-red-500">*</span></label>
               <select
                 className="input w-full"
                 value={buffer.accountId}
@@ -382,7 +489,7 @@ const History: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Category</label>
+              <label className="block text-xs text-gray-600 mb-1">Category <span className="text-red-500">*</span></label>
               <CategorySelector
                 categories={categories}
                 selectedCategoryId={buffer.categoryId}
@@ -396,7 +503,13 @@ const History: React.FC = () => {
             </div>
             <div className="sm:col-span-2 lg:col-span-6 flex gap-2 justify-end">
               <button onClick={cancel} className="btn-secondary text-sm">Cancel</button>
-              <button onClick={save} className="btn-primary text-sm">Save</button>
+              <button
+                onClick={save}
+                disabled={!buffer.description.trim() || !buffer.amount || Number(buffer.amount) === 0 || !buffer.accountId || !buffer.categoryId || !buffer.type}
+                className="btn-primary text-sm disabled:opacity-50"
+              >
+                Save
+              </button>
             </div>
           </div>
         )}
@@ -409,7 +522,10 @@ const History: React.FC = () => {
           <div className="p-6 text-gray-500">
             No history entries yet. History shows transactions before the Forecast start date,
             accepted forecast occurrences, deleted forecast rows, and manual entries.
-            Use "Return Selected" to move rows back to Forecast.
+          </div>
+        ) : filteredRows.length === 0 ? (
+          <div className="p-6 text-gray-500">
+            No rows match the current filters. Try adjusting or clearing the filter criteria.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -427,8 +543,8 @@ const History: React.FC = () => {
                     <input
                       type="checkbox"
                       className="rounded"
-                      checked={rows.length > 0 && selectedRows.length === rows.length}
-                      onChange={() => selectedRows.length === rows.length ? clearSelection() : selectAllRows()}
+                      checked={filteredRows.length > 0 && filteredRows.every(r => selectedRows.includes(r.id))}
+                      onChange={() => filteredRows.every(r => selectedRows.includes(r.id)) ? clearSelection() : selectAllRows()}
                     />
                   </th>
                   <th className="text-left py-3 px-3 text-sm font-medium text-gray-700">Date</th>
@@ -438,18 +554,26 @@ const History: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(row => {
+                {filteredRows.map(row => {
                   const isEditing = editingId === row.id
                   const isSelected = selectedRows.includes(row.id)
+                  const isExpanded = expandedId === row.id
                   const rowClass = `border-b ${
                     isEditing ? 'bg-blue-50' :
                     isSelected ? 'bg-blue-50/50' :
                     'hover:bg-gray-50'
-                  }`
+                  }${row.bankDescription && !isEditing ? ' cursor-pointer' : ''}`
                   return (
                     <React.Fragment key={row.id}>
-                      <tr className={rowClass}>
-                        <td className="py-2 px-3 align-top">
+                      <tr
+                        className={rowClass}
+                        onClick={() => {
+                          if (row.bankDescription && !isEditing) {
+                            setExpandedId(prev => prev === row.id ? null : row.id)
+                          }
+                        }}
+                      >
+                        <td className="py-2 px-3 align-top" onClick={e => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             className="rounded"
@@ -491,10 +615,18 @@ const History: React.FC = () => {
                                 <p className="font-medium text-gray-900 text-sm truncate">
                                   {row.description}
                                 </p>
+                                {isExpanded && row.bankDescription && (
+                                  <p className="text-xs text-blue-700 font-mono mt-0.5 truncate" title={row.bankDescription}>
+                                    {row.bankDescription}
+                                  </p>
+                                )}
                                 <p className="text-xs text-gray-500 truncate">
                                   {row.type === 'income' ? 'Income' : row.type === 'expense' ? 'Expense' : 'Administrative'}
                                   {' · '}
                                   {row.accountName || accountName(row.accountId)}
+                                  {row.isTransfer && row.transferToAccountId && (
+                                    <span className="text-blue-500"> → {accountName(row.transferToAccountId)}</span>
+                                  )}
                                   {' · '}
                                   {row.categoryName || categoryName(row.categoryId)}
                                   {' · '}
@@ -509,7 +641,14 @@ const History: React.FC = () => {
                                       Deleted
                                     </span>
                                   )}
-                                  {row.isManualEdit && (
+                                  {row.bankDescription ? (
+                                    <span
+                                      title="Imported from bank statement"
+                                      className="ml-1 inline-flex items-center text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200"
+                                    >
+                                      Bank
+                                    </span>
+                                  ) : row.isManualEdit && (
                                     <span
                                       title="Manually edited"
                                       className="ml-1 inline-flex items-center text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200"
@@ -539,7 +678,7 @@ const History: React.FC = () => {
                             </span>
                           )}
                         </td>
-                        <td className="py-2 px-3 align-top text-right whitespace-nowrap">
+                        <td className="py-2 px-3 align-top text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
                           {isEditing ? (
                             <div className="flex gap-2 justify-end">
                               <button
@@ -556,7 +695,8 @@ const History: React.FC = () => {
                               </button>
                               <button
                                 onClick={save}
-                                className="btn-primary text-sm"
+                                disabled={!buffer.description.trim() || !buffer.amount || Number(buffer.amount) === 0 || !buffer.accountId || !buffer.categoryId || !buffer.type}
+                                className="btn-primary text-sm disabled:opacity-50"
                               >
                                 Save
                               </button>
@@ -564,7 +704,7 @@ const History: React.FC = () => {
                           ) : (
                             <>
                               <button onClick={() => startEdit(row)} className="btn-secondary text-xs mr-1">Edit</button>
-                              {row.isManualEdit && row.transactionId && (
+                              {row.isManualEdit && row.transactionId && !row.bankDescription && (
                                 <button
                                   onClick={() => resetRow(row)}
                                   className="text-xs px-2 py-1 rounded border border-amber-200 text-amber-700 hover:bg-amber-50 mr-1"
@@ -646,8 +786,9 @@ const History: React.FC = () => {
                                 <select
                                   className="input-field text-sm"
                                   value={buffer.type}
-                                  onChange={(e) => setBuffer({ ...buffer, type: e.target.value as 'income' | 'expense' | 'administrative' })}
+                                  onChange={(e) => setBuffer({ ...buffer, type: e.target.value as 'income' | 'expense' | 'administrative' | '' })}
                                 >
+                                  <option value="">-- Select --</option>
                                   <option value="income">Income</option>
                                   <option value="expense">Expense</option>
                                   <option value="administrative">Administrative</option>
@@ -664,90 +805,6 @@ const History: React.FC = () => {
             </table>
           </div>
         )}
-      </div>
-    </div>
-  )
-}
-
-interface EditFormProps {
-  buffer: EditBuffer
-  setBuffer: (b: EditBuffer) => void
-  accounts: Account[]
-  categories: Category[]
-  setCategories: React.Dispatch<React.SetStateAction<Category[]>>
-  onSave: () => void
-  onCancel: () => void
-}
-
-const EditForm: React.FC<EditFormProps> = ({ buffer, setBuffer, accounts, categories, setCategories, onSave, onCancel }) => {
-  const update = <K extends keyof EditBuffer>(k: K, v: EditBuffer[K]) => setBuffer({ ...buffer, [k]: v })
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
-      <div>
-        <label className="block text-xs text-gray-600 mb-1">Date</label>
-        <input type="date" className="input w-full" value={buffer.date}
-               onChange={e => update('date', e.target.value || formatDateForStorage(new Date()))} />
-      </div>
-      <div className="lg:col-span-2">
-        <label className="block text-xs text-gray-600 mb-1">Description</label>
-        <input type="text" className="input w-full" value={buffer.description}
-               onChange={e => update('description', e.target.value)} />
-      </div>
-      <div>
-        <label className="block text-xs text-gray-600 mb-1">Amount</label>
-        <input type="number" step="0.01" className="input w-full" value={buffer.amount}
-               onChange={e => update('amount', e.target.value)} />
-      </div>
-      <div>
-        <label className="block text-xs text-gray-600 mb-1">Type</label>
-        <select className="input w-full" value={buffer.type}
-                onChange={e => update('type', e.target.value as 'income' | 'expense')}>
-          <option value="income">Income</option>
-          <option value="expense">Expense</option>
-        </select>
-      </div>
-      <div>
-        <label className="block text-xs text-gray-600 mb-1">Account</label>
-        <select className="input w-full" value={buffer.accountId}
-                onChange={e => update('accountId', e.target.value)}>
-          <option value="">— select —</option>
-          {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-      </div>
-      <div className="flex items-center">
-        <label className="flex items-center space-x-2 cursor-pointer">
-          <input
-            type="checkbox"
-            className="form-checkbox h-4 w-4 text-blue-600"
-            checked={buffer.isTransfer}
-            onChange={e => update('isTransfer', e.target.checked)}
-          />
-          <span className="text-sm font-medium text-gray-700">Transfer</span>
-        </label>
-      </div>
-      {buffer.isTransfer && (
-        <div>
-          <label className="block text-xs text-gray-600 mb-1">Transfer To Account</label>
-          <select className="input w-full" value={buffer.transferToAccountId}
-                  onChange={e => update('transferToAccountId', e.target.value)}>
-            <option value="">— select —</option>
-            {accounts
-              .filter(a => a.id !== buffer.accountId)
-              .map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-        </div>
-      )}
-      <div>
-        <label className="block text-xs text-gray-600 mb-1">Category</label>
-        <select className="input w-full" value={buffer.categoryId}
-                onChange={e => update('categoryId', e.target.value)}>
-          <option value="">— select —</option>
-          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-      </div>
-      <div className="sm:col-span-2 lg:col-span-6 flex gap-2 justify-end">
-        <button onClick={onCancel} className="btn-secondary text-sm">Cancel</button>
-        <button onClick={onSave} className="btn-primary text-sm">Save</button>
       </div>
     </div>
   )

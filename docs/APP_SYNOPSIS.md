@@ -33,6 +33,8 @@ A privacy-first, local-first personal budgeting application that replicates and 
 - **User Control**: Confirm, edit, or exclude individual imported transactions
 - **Account Memory**: Remember import settings per account for future use
 - **Review Process**: User approval workflow for all imported data
+- **Transfer Preservation**: Matched transfer budget items create transfer-type history rows with correct destination account
+- **Bank Description Retention**: Original CSV descriptions preserved on history rows for audit and rule creation
 
 ### 📈 Dashboard & Analysis Tools
 - **Main Dashboard**: Account balance charts, key metrics, low balance indicators
@@ -40,9 +42,20 @@ A privacy-first, local-first personal budgeting application that replicates and 
 - **Future-Focused**: Identify potential cash flow problems before they occur
 - **Interactive Filtering**: Date ranges and account selection
 - **Visual Indicators**: Clear formatting for warnings and important data points
+- **Budget Analytics** (Budget page → Analytics tab):
+  - Account-specific budget-vs-actual arc gauges (Checking, Savings, Credit)
+  - Dual-zone overage visualization (0–200% scale with target marker)
+  - "Flipped" logic for Savings/Credit where exceeding budget is positive
+  - Month navigation (Prev/Next) with dynamic context labels
+  - Budget vs. Actual bar chart with drilldown to child categories
+  - Spending by Category with parent/child toggle
+  - Budget Progress by Category with drilldown
+  - Click-through navigation to History page with pre-filtered transactions
+  - State persistence when navigating away and returning
 
 ### 📉 Historical Analysis & Trends
 - **Spending History**: Complete archive of accepted transactions
+- **Bank Description Audit**: Expandable BANK rows reveal original imported bank descriptions
 - **Trend Analysis**: Averages, increases, spending patterns over time
 - **Local Recommendations**: Algorithm-based budget suggestions (no external AI)
 - **Category Performance**: Budget vs actual comparisons by category

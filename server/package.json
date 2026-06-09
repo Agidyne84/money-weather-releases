@@ -1,7 +1,7 @@
 {
   "name": "budget-app-server",
   "version": "1.0.0",
-  "description": "Budget App Backend Server",
+  "description": "Money Weather - Budget App Backend Server",
   "main": "dist/server/src/index.js",
   "scripts": {
     "build": "tsc",

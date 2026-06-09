@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Account } from '../types'
-import { accountsApi } from '../services/api'
+import { accountsApi } from '../services/database'
 import { formatDateForStorage } from '../utils/dateUtils'
 
 const AccountManager: React.FC = () => {
@@ -53,11 +53,10 @@ const AccountManager: React.FC = () => {
 
   const validateAdjustForm = (): boolean => {
     const errors: string[] = []
-    
-    if (!adjustFormData.amount || isNaN(Number(adjustFormData.amount))) errors.push('Amount must be a valid number')
-    if (Number(adjustFormData.amount) === 0) errors.push('Amount cannot be zero')
+
+    if (adjustFormData.amount === '' || isNaN(Number(adjustFormData.amount))) errors.push('New balance must be a valid number')
     if (!adjustFormData.date) errors.push('Date is required')
-    
+
     setFormErrors(errors)
     return errors.length === 0
   }
@@ -96,16 +95,13 @@ const AccountManager: React.FC = () => {
 
   const handleAdjustBalance = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!validateAdjustForm() || !adjustingAccount) return
-    
+
     setIsSubmitting(true)
     try {
-      // For now, just update the current balance
-      // In a future version, this would create a transaction record
-      const adjustmentAmount = Number(adjustFormData.amount)
-      const newBalance = adjustingAccount.currentBalance + adjustmentAmount
-      
+      const newBalance = Number(adjustFormData.amount)
+
       await accountsApi.update(adjustingAccount.id, {
         currentBalance: newBalance
       })
@@ -317,17 +313,17 @@ const AccountManager: React.FC = () => {
             
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="form-label">Account Name</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
+                <label className="form-label">Account Name <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  className="form-input"
                   placeholder="e.g., Checking Account"
                   value={formData.name}
                   onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                   disabled={isSubmitting}
                 />
               </div>
-              
+
               <div>
                 <label className="form-label">Account Type</label>
                 <select 
@@ -345,10 +341,10 @@ const AccountManager: React.FC = () => {
               
               {!editingAccount && (
                 <div>
-                  <label className="form-label">Starting Balance</label>
-                  <input 
-                    type="number" 
-                    className="form-input" 
+                  <label className="form-label">Starting Balance <span className="text-red-500">*</span></label>
+                  <input
+                    type="number"
+                    className="form-input"
                     placeholder="0.00"
                     step="0.01"
                     value={formData.startingBalance}
@@ -381,10 +377,10 @@ const AccountManager: React.FC = () => {
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="btn-primary"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !formData.name.trim() || (!editingAccount && (!formData.startingBalance || isNaN(Number(formData.startingBalance))))}
                 >
                   {isSubmitting ? 'Saving...' : (editingAccount ? 'Update' : 'Add')}
                 </button>
@@ -415,25 +411,22 @@ const AccountManager: React.FC = () => {
             
             <form onSubmit={handleAdjustBalance} className="space-y-4">
               <div>
-                <label className="form-label">Adjustment Amount</label>
-                <input 
-                  type="number" 
-                  className="form-input" 
-                  placeholder="0.00 (positive for deposit, negative for withdrawal)"
+                <label className="form-label">New Balance <span className="text-red-500">*</span></label>
+                <input
+                  type="number"
+                  className="form-input"
+                  placeholder="Enter the desired balance"
                   step="0.01"
                   value={adjustFormData.amount}
                   onChange={(e) => setAdjustFormData(prev => ({ ...prev, amount: e.target.value }))}
                   disabled={isSubmitting}
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Use positive numbers for deposits, negative for withdrawals
-                </p>
               </div>
               
               <div>
-                <label className="form-label">Date</label>
-                <input 
-                  type="date" 
+                <label className="form-label">Date <span className="text-red-500">*</span></label>
+                <input
+                  type="date"
                   className="form-input"
                   value={adjustFormData.date}
                   onChange={(e) => setAdjustFormData(prev => ({ ...prev, date: e.target.value }))}
@@ -456,25 +449,25 @@ const AccountManager: React.FC = () => {
               <div className="bg-gray-50 p-3 rounded-lg">
                 <p className="text-sm text-gray-600">
                   <strong>Current Balance:</strong> ${adjustingAccount?.currentBalance.toFixed(2)}<br/>
-                  <strong>New Balance:</strong> ${(adjustingAccount?.currentBalance || 0) + (Number(adjustFormData.amount) || 0)}
+                  <strong>New Balance:</strong> ${Number(adjustFormData.amount).toFixed(2)}
                 </p>
               </div>
-              
+
               <div className="flex justify-end space-x-3">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="btn-secondary"
                   onClick={resetAdjustForm}
                   disabled={isSubmitting}
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="btn-primary"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || adjustFormData.amount === '' || isNaN(Number(adjustFormData.amount)) || !adjustFormData.date}
                 >
-                  {isSubmitting ? 'Adjusting...' : 'Adjust Balance'}
+                  {isSubmitting ? 'Saving...' : 'Set Balance'}
                 </button>
               </div>
             </form>

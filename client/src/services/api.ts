@@ -3,8 +3,6 @@ import {
   Account, 
   Category, 
   Transaction, 
-  TransactionFormData, 
-  AccountFormData, 
   BalanceForecast, 
   ForecastTransaction, 
   LowBalanceAnalysis 
@@ -81,16 +79,27 @@ export const accountsApi = {
 export const categoriesApi = {
   getAll: async (): Promise<Category[]> => {
     const response = await api.get('/categories')
-    
-    // Transform flat API response to Category objects
-    return response.data.map((item: any): Category => ({
-      id: item.id,
-      name: item.name,
-      parentId: item.parentId || undefined,
-      color: item.color,
-      sortOrder: item.sortOrder,
-      createdAt: item.createdAt
-    }))
+
+    // Backend returns hierarchical data (root categories with children arrays).
+    // Flatten into a single array so every category is selectable.
+    const flat: Category[] = []
+    const flatten = (nodes: any[]) => {
+      nodes.forEach((node: any) => {
+        flat.push({
+          id: node.id,
+          name: node.name,
+          parentId: node.parentId || undefined,
+          color: node.color,
+          sortOrder: node.sortOrder,
+          createdAt: node.createdAt
+        })
+        if (node.children && node.children.length > 0) {
+          flatten(node.children)
+        }
+      })
+    }
+    flatten(response.data)
+    return flat
   },
 
   create: async (category: Omit<Category, 'id' | 'createdAt'>): Promise<Category> => {
@@ -150,6 +159,8 @@ export const transactionsApi = {
       categoryId: item.categoryId,
       accountId: item.accountId,
       type: item.type,
+      isTransfer: Boolean(item.isTransfer),
+      transferToAccountId: item.transferToAccountId ?? item.transfer_to_account_id ?? undefined,
       isActive: Boolean(item.isActive),
       createdAt: item.createdAt,
       updatedAt: item.updatedAt
@@ -168,6 +179,8 @@ export const transactionsApi = {
       endDate: transaction.endDate ? formatDateForStorage(createSafeDate(transaction.endDate)) : null,
       pauseStartDate: transaction.pauseStartDate ? formatDateForStorage(createSafeDate(transaction.pauseStartDate)) : null,
       pauseEndDate: transaction.pauseEndDate ? formatDateForStorage(createSafeDate(transaction.pauseEndDate)) : null,
+      isTransfer: transaction.isTransfer,
+      transferToAccountId: transaction.transferToAccountId
     }
     
     // Remove the nested frequency object
@@ -193,6 +206,8 @@ export const transactionsApi = {
       categoryId: item.categoryId,
       accountId: item.accountId,
       type: item.type,
+      isTransfer: Boolean(item.isTransfer),
+      transferToAccountId: item.transferToAccountId ?? item.transfer_to_account_id ?? undefined,
       isActive: Boolean(item.isActive),
       createdAt: item.createdAt,
       updatedAt: item.updatedAt
@@ -236,6 +251,8 @@ export const transactionsApi = {
       categoryId: item.categoryId,
       accountId: item.accountId,
       type: item.type,
+      isTransfer: Boolean(item.isTransfer),
+      transferToAccountId: item.transferToAccountId ?? item.transfer_to_account_id ?? undefined,
       isActive: Boolean(item.isActive),
       createdAt: item.createdAt,
       updatedAt: item.updatedAt
@@ -260,11 +277,15 @@ export interface HistoryRow {
   description: string
   amount: number
   type: 'income' | 'expense'
+  isTransfer?: boolean
+  transferToAccountId?: string
   archivedAt?: string
   sourceTransactionName?: string | null
   isManualEdit?: boolean
   isSuppressed?: boolean
   isPosted?: boolean
+  isExcluded?: boolean
+  bankDescription?: string
 }
 
 export interface HistoryQuery {
@@ -275,6 +296,8 @@ export interface HistoryQuery {
   limit?: number
   offset?: number
   includeUnposted?: boolean
+  includeSuppressed?: boolean
+  includeExcluded?: boolean
 }
 
 function mapHistoryRow(item: any): HistoryRow {
@@ -290,11 +313,15 @@ function mapHistoryRow(item: any): HistoryRow {
     description: item.description,
     amount: Number(item.amount),
     type: item.type,
+    isTransfer: Boolean(item.isTransfer),
+    transferToAccountId: item.transferToAccountId ?? item.transfer_to_account_id ?? undefined,
     archivedAt: item.archivedAt,
     sourceTransactionName: item.sourceTransactionName ?? null,
-    isManualEdit: Boolean(item.isManualEdit),
-    isSuppressed: Boolean(item.isSuppressed),
-    isPosted: item.isPosted !== undefined ? Boolean(item.isPosted) : true,
+    isManualEdit: Number(item.isManualEdit) !== 0,
+    isSuppressed: Number(item.isSuppressed) !== 0,
+    isPosted: item.isPosted !== undefined ? (Number(item.isPosted) !== 0) : true,
+    isExcluded: Number(item.isExcluded) !== 0,
+    bankDescription: item.bankDescription || undefined,
   }
 }
 
@@ -307,7 +334,9 @@ export const historyApi = {
     if (query.categoryId) params.append('categoryId', query.categoryId)
     if (query.limit !== undefined)  params.append('limit', String(query.limit))
     if (query.offset !== undefined) params.append('offset', String(query.offset))
-    if (query.includeUnposted)    params.append('includeUnposted', 'true')
+    if (query.includeUnposted !== undefined)    params.append('includeUnposted', query.includeUnposted ? 'true' : 'false')
+    if (query.includeSuppressed !== undefined)  params.append('includeSuppressed', query.includeSuppressed ? 'true' : 'false')
+    if (query.includeExcluded !== undefined)    params.append('includeExcluded', query.includeExcluded ? 'true' : 'false')
     const response = await api.get(`/history?${params.toString()}`)
     return response.data.map(mapHistoryRow)
   },
@@ -320,6 +349,8 @@ export const historyApi = {
     description: string
     amount: number
     type: 'income' | 'expense' | 'administrative'
+    isTransfer?: boolean
+    transferToAccountId?: string
     isSuppressed?: boolean
     isManualEdit?: boolean
     isPosted?: boolean
@@ -329,14 +360,19 @@ export const historyApi = {
   },
 
   update: async (id: string, patch: Partial<{
+    transactionId: string | null
     accountId: string
     categoryId: string
     date: string
     description: string
     amount: number
     type: 'income' | 'expense' | 'administrative'
+    isTransfer?: boolean
+    transferToAccountId?: string
+    isSuppressed?: boolean
     isManualEdit?: boolean
     isPosted?: boolean
+    isExcluded?: boolean
   }>): Promise<HistoryRow> => {
     const response = await api.put(`/history/${id}`, patch)
     return mapHistoryRow(response.data)
@@ -344,6 +380,11 @@ export const historyApi = {
 
   delete: async (id: string): Promise<{ success: boolean }> => {
     const response = await api.delete(`/history/${id}`)
+    return response.data
+  },
+
+  reset: async (): Promise<{ success: boolean; message?: string }> => {
+    const response = await api.post('/history/reset')
     return response.data
   },
 }
@@ -363,6 +404,72 @@ export const preferencesApi = {
 export const healthApi = {
   check: async (): Promise<{ status: string; timestamp: string }> => {
     const response = await api.get('/health')
+    return response.data
+  },
+}
+
+export interface ImportRule {
+  id: string
+  transactionId: string | null
+  accountId: string | null        // raw comma-separated string from DB
+  accountIds: string[]            // parsed array (server-populated)
+  restrictToAccount: boolean
+  pattern: string
+  categoryId: string
+  isActive: boolean
+  matchCount: number
+  createdAt: string
+  updatedAt: string
+  transactionName?: string | null
+  categoryName?: string | null
+  accountName?: string | null     // name of first account (display only)
+}
+
+export interface RuleExamplesResult {
+  examples: { bankDescription: string; accountId: string; amount: number; date: string }[]
+  count: number
+  suggestedPattern: string | null
+  confidence: number | null
+  existingRule: { id: string; pattern: string; isActive: boolean } | null
+  /** All active rule patterns for this budget item — used client-side to filter session descriptions */
+  existingRulePatterns: string[]
+  suggestionsSuppressed: boolean
+}
+
+export const importApi = {
+  preview: async (csv: string, accountId: string): Promise<{
+    detectedColumns: { date: string | null; amount: string | null; description: string | null }
+    rows: {
+      date: string
+      amount: number
+      description: string
+      isDuplicate: boolean
+      ruleMatch: {
+        ruleId: string
+        transactionId: string | null
+        categoryId: string
+        pattern: string
+        transactionName: string | null
+      } | null
+    }[]
+    savedMapping: any
+  }> => {
+    const response = await api.post('/import/preview', { csv, accountId })
+    return response.data
+  },
+
+  commit: async (payload: {
+    accountId: string
+    rows: {
+      bankRow: { date: string; amount: number; description: string }
+      budgetTransactionId?: string
+      occurrenceDate?: string
+      excluded?: boolean
+      subRowEdits?: any[]
+    }[]
+    forecastOccurrences: { transactionId: string; date: string }[]
+  }): Promise<{ success: boolean; committed: number }> => {
+    const response = await api.post('/import/commit', payload)
     return response.data
   },
 }
@@ -412,6 +519,64 @@ export const forecastApi = {
   
   resetForecast: async (): Promise<void> => {
     await api.post('/forecast/reset')
+  },
+}
+
+export const rulesApi = {
+  getAll: async (): Promise<ImportRule[]> => {
+    const response = await api.get('/rules')
+    return response.data
+  },
+
+  create: async (rule: {
+    transactionId?: string | null
+    accountIds?: string[]
+    restrictToAccount?: boolean
+    pattern: string
+    categoryId: string
+  }): Promise<ImportRule> => {
+    const response = await api.post('/rules', rule)
+    return response.data
+  },
+
+  update: async (id: string, patch: Partial<{
+    pattern: string
+    restrictToAccount: boolean
+    isActive: boolean
+    accountIds: string[]
+  }>): Promise<ImportRule> => {
+    const response = await api.put(`/rules/${id}`, patch)
+    return response.data
+  },
+
+  delete: async (id: string): Promise<{ success: boolean }> => {
+    const response = await api.delete(`/rules/${id}`)
+    return response.data
+  },
+
+  getExamples: async (transactionId: string): Promise<RuleExamplesResult> => {
+    const response = await api.get(`/rules/examples?transactionId=${encodeURIComponent(transactionId)}`)
+    return response.data
+  },
+
+  disableSuggestions: async (transactionId: string): Promise<{ success: boolean }> => {
+    const response = await api.post('/rules/disable-suggestions', { transactionId })
+    return response.data
+  },
+
+  suggestPattern: async (descriptions: string[]): Promise<{ pattern: string | null; confidence: number | null }> => {
+    const response = await api.post('/rules/suggest-pattern', { descriptions })
+    return response.data
+  },
+
+  suggestPatternDiscriminating: async (params: {
+    positives: string[]
+    sessionNegatives: string[]
+    accountId: string
+    transactionId: string
+  }): Promise<{ pattern: string | null; confidence: number | null }> => {
+    const response = await api.post('/rules/suggest-pattern-discriminating', params)
+    return response.data
   },
 }
 

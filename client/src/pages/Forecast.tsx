@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { Account, ForecastTransaction, BalanceForecast, LowBalanceAnalysis, Category } from '../types'
-import { accountsApi, transactionsApi, categoriesApi, historyApi } from '../services/api'
+import { accountsApi, transactionsApi, categoriesApi, historyApi } from '../services/database'
 import { createSafeDate, formatDateForDisplay, formatDateForInput, formatDateForStorage } from '../utils/dateUtils'
-import { isTransactionOnDate as sharedIsTransactionOnDate } from '../../../shared/recurrence'
+import { generateBalanceForecast, generateForecastTransactions, generateLowBalanceAnalysis } from '../utils/forecastEngine'
 import CategorySelector from '../components/CategorySelector'
+import BankImportCard from '../components/BankImportCard'
 
 const Forecast: React.FC = () => {
   const [forecasts, setForecasts] = useState<BalanceForecast[]>([])
@@ -32,13 +33,25 @@ const Forecast: React.FC = () => {
   const [isAddingManual, setIsAddingManual] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [categories, setCategories] = useState<any[]>([])
+
+  // Balance adjustment modal
+  const [showBalanceModal, setShowBalanceModal] = useState(false)
+  const [balanceEdits, setBalanceEdits] = useState<Record<string, string>>({})
+
+  const openBalanceModal = () => {
+    const edits: Record<string, string> = {}
+    accounts.forEach(a => { edits[a.id] = a.currentBalance.toFixed(2) })
+    setBalanceEdits(edits)
+    setShowBalanceModal(true)
+  }
+
   const [manualForm, setManualForm] = useState({
     description: '',
     amount: '',
     date: formatDateForStorage(new Date()),
     accountId: '',
     categoryId: '',
-    type: 'expense' as 'income' | 'expense' | 'administrative',
+    type: '' as 'income' | 'expense' | 'administrative' | '',
     isTransfer: false,
     transferToAccountId: '',
   })
@@ -129,6 +142,30 @@ const Forecast: React.FC = () => {
   }
   const [forecastMonths, setForecastMonths] = useState(60)
 
+  // Persist which account columns are visible in the forecast table.
+  const [visibleAccountIds, setVisibleAccountIds] = useState<string[]>(() => {
+    const saved = localStorage.getItem('forecastVisibleAccounts')
+    return saved ? JSON.parse(saved) : []
+  })
+
+  const toggleAccountVisibility = (accountId: string) => {
+    setVisibleAccountIds(prev => {
+      const next = prev.includes(accountId)
+        ? prev.filter(id => id !== accountId)
+        : [...prev, accountId]
+      localStorage.setItem('forecastVisibleAccounts', JSON.stringify(next))
+      return next
+    })
+  }
+
+  const resetVisibleAccounts = () => {
+    const defaultIds = accounts
+      .filter(a => a.type === 'checking' || a.type === 'savings')
+      .map(a => a.id)
+    setVisibleAccountIds(defaultIds)
+    localStorage.setItem('forecastVisibleAccounts', JSON.stringify(defaultIds))
+  }
+
   const loadForecastData = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
       // `silent` refreshes skip the full-page loading placeholder so the
@@ -147,7 +184,7 @@ const Forecast: React.FC = () => {
         transactionsApi.getAll(1000, 0), // Load all transactions for editing
         // Pull history rows anchored to any of our transactions so we can
         // hide forecast occurrences that have already been posted.
-        historyApi.getAll({ endDate: endYmd, limit: 1000, includeUnposted: true }),
+        historyApi.getAll({ endDate: endYmd, limit: 1000, includeUnposted: true, includeSuppressed: true, includeExcluded: true }),
       ])
       
       // Store data for editing and manual transaction form
@@ -156,29 +193,40 @@ const Forecast: React.FC = () => {
       setCategories(categoriesData)
       setHistoryData(historyData)
 
+      // Default visible columns to checking + savings on first data load.
+      const savedVisible = localStorage.getItem('forecastVisibleAccounts')
+      if (!savedVisible && accountsData.length > 0) {
+        const defaultIds = accountsData
+          .filter(a => a.type === 'checking' || a.type === 'savings')
+          .map(a => a.id)
+        setVisibleAccountIds(defaultIds)
+        localStorage.setItem('forecastVisibleAccounts', JSON.stringify(defaultIds))
+      }
+
       // Build a set of "(transactionId|YYYY-MM-DD)" keys for posted occurrences
       // so we can filter the forecast list. Manual history rows with no
       // transaction_id don't suppress any forecast row.
-      // Only filter out non-manual-edit history rows (accepted/suppressed).
-      // Manual edit overrides (isManualEdit=true) are kept in the forecast
-      // but with override values applied by the generator.
+      // Only filter out actually-posted history rows (isPosted=true and not
+      // excluded). This correctly covers bank imports, accepted forecast rows,
+      // and auto-accepted rows, while letting unposted rows reappear when the
+      // start date moves backward.
       const postedKeys = new Set<string>(
         historyData
-          .filter(h => !!h.transactionId && !h.isManualEdit)
+          .filter(h => !!h.transactionId && h.isPosted && !h.isExcluded)
           .map(h => `${h.transactionId}|${formatDateForStorage(h.date)}`)
       )
 
       // Generate forecast data on client side
-      const forecastsData = generateClientBalanceForecast(accountsData, transactionsData, createSafeDate(startDate), endDate)
+      const forecastsData = generateBalanceForecast(accountsData, transactionsData, createSafeDate(startDate), endDate, postedKeys, historyData)
       // Pass history data so manual edit overrides are applied to forecast rows
-      const rawForecastTxns = generateClientForecastTransactions(
+      const rawForecastTxns = generateForecastTransactions(
         transactionsData, categoriesData, accountsData, createSafeDate(startDate), endDate, historyData
       )
       const transactionsForecastData = rawForecastTxns.filter(ftx => {
         const key = `${ftx.transactionId}|${formatDateForStorage(ftx.date)}`
         return !postedKeys.has(key)
       })
-      const lowBalanceData = generateClientLowBalanceAnalysis(accountsData, transactionsData, createSafeDate(startDate), endDate)
+      const lowBalanceData = generateLowBalanceAnalysis(accountsData, forecastsData)
       
       setForecasts(forecastsData)
       setTransactions(transactionsForecastData)
@@ -203,200 +251,28 @@ const Forecast: React.FC = () => {
     }
   }
 
-  // Client-side forecast generation functions
-  const generateClientBalanceForecast = (accounts: any[], transactions: any[], startDate: Date, endDate: Date): BalanceForecast[] => {
-    const forecasts: BalanceForecast[] = []
-    const currentDate = new Date(startDate)
-    
-    // Initialize account balances from current balances
-    const accountBalances: { [key: string]: number } = {}
-    accounts.forEach(account => {
-      accountBalances[account.id] = account.currentBalance || 0
-    })
-    
-    // Generate daily forecasts across the full window
-    while (currentDate <= endDate) {
-      // Calculate daily balance changes
-      const dailyTransactions = transactions.filter(t => {
-        const txDate = new Date(t.startDate)
-        return isTransactionOnDate(t, txDate, currentDate)
-      })
-      
-      // Update account balances
-      dailyTransactions.forEach(tx => {
-        accountBalances[tx.accountId] = (accountBalances[tx.accountId] || 0) + tx.amount
-      })
-      
-      // Create forecast entry
-      const forecast: BalanceForecast = {
-        date: new Date(currentDate),
-        accountBalances: accounts.map(account => ({
-          accountId: account.id,
-          accountName: account.name,
-          balance: accountBalances[account.id] || 0,
-          change: 0 // Simplified
-        })),
-        totalBalance: Object.values(accountBalances).reduce((sum, balance) => sum + balance, 0),
-        netWorth: Object.values(accountBalances).reduce((sum, balance) => sum + balance, 0),
-        lowestBalanceAccounts: []
-      }
-      
-      forecasts.push(forecast)
-      currentDate.setDate(currentDate.getDate() + 1)
-    }
-    
-    return forecasts
-  }
-
-  const generateClientForecastTransactions = (
-    transactions: any[], 
-    categories: any[], 
-    accounts: any[], 
-    startDate: Date, 
-    endDate: Date,
-    historyOverrides: any[] = []
-  ): ForecastTransaction[] => {
-    const forecastTransactions: ForecastTransaction[] = []
-    // Initialize currentDate at noon to avoid timezone issues
-    const currentDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 12, 0, 0)
-    
-    // Build lookup for manual edit overrides keyed by "transactionId|YYYY-MM-DD"
-    const overrideMap = new Map<string, any>()
-    historyOverrides.forEach(h => {
-      if (h.transactionId && h.isManualEdit) {
-        const key = `${h.transactionId}|${formatDateForStorage(h.date)}`
-        overrideMap.set(key, h)
-      }
-    })
-    
-    // Generate transactions for the entire forecast period
-    while (currentDate <= endDate) {
-      transactions.forEach(tx => {
-        // Ensure startDate is properly parsed as a Date object
-        let transactionDate: Date
-        if (tx.startDate instanceof Date) {
-          transactionDate = tx.startDate
-        } else {
-          // Parse the date string and ensure it's treated as midnight local time
-          const dateStr = tx.startDate
-          const [year, month, day] = dateStr.split('-').map(Number)
-          transactionDate = new Date(year, month - 1, day) // month is 0-indexed
-        }
-        
-        if (isTransactionOnDate(tx, transactionDate, currentDate)) {
-          const category = categories.find(c => c.id === tx.categoryId)
-          const account = accounts.find(a => a.id === tx.accountId)
-          const dateKey = formatDateForStorage(currentDate)
-          const overrideKey = `${tx.id}|${dateKey}`
-          const override = overrideMap.get(overrideKey)
-          
-          const forecastTx: ForecastTransaction = {
-            id: `forecast_${tx.id}_${currentDate.getTime()}`,
-            transactionId: tx.id,
-            date: new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 12, 0, 0),
-            description: override ? override.description : tx.name,
-            amount: override ? override.amount : tx.amount,
-            type: override ? override.type : tx.type,
-            categoryId: override ? override.categoryId : tx.categoryId,
-            categoryName: override 
-              ? (categories.find(c => c.id === override.categoryId)?.name || 'Uncategorized')
-              : (category?.name || 'Uncategorized'),
-            categoryColor: override
-              ? (categories.find(c => c.id === override.categoryId)?.color || '#6B7280')
-              : (category?.color || '#6B7280'),
-            accountId: override ? override.accountId : tx.accountId,
-            accountName: override
-              ? (accounts.find(a => a.id === override.accountId)?.name || 'Unknown Account')
-              : (account?.name || 'Unknown Account'),
-            isTransfer: tx.isTransfer || false,
-            transferToAccountId: tx.transferToAccountId,
-            isOverride: false,
-            isPosted: currentDate < new Date(),
-            isEdited: !!override,
-            originalAmount: tx.amount
+  const handleSaveBalances = async () => {
+    try {
+      await Promise.all(
+        accounts.map(async (account) => {
+          const value = balanceEdits[account.id]
+          if (value === undefined || value === '') return
+          const num = Number(value)
+          if (isNaN(num)) return
+          if (num !== account.currentBalance) {
+            await accountsApi.update(account.id, { currentBalance: num })
           }
-          
-          forecastTransactions.push(forecastTx)
-        }
-      })
-      
-      currentDate.setDate(currentDate.getDate() + 1)
-      // Reset time to noon after increment to avoid timezone drift
-      currentDate.setHours(12, 0, 0, 0)
+        })
+      )
+      // Reload accounts then refresh forecast
+      const res = await accountsApi.getAll()
+      setAccounts(res)
+      await loadForecastData({ silent: true })
+      setShowBalanceModal(false)
+    } catch (error) {
+      console.error('Error updating balances:', error)
+      alert('Failed to update balances. Please try again.')
     }
-
-    // Include standalone history entries (manual entries with no transactionId
-    // that are not yet posted) so they appear in the forecast alongside
-    // recurring transactions.
-    historyOverrides.forEach(h => {
-      if (!h.transactionId && h.isPosted === false && h.date >= startDate && h.date <= endDate) {
-        const category = categories.find(c => c.id === h.categoryId)
-        const account = accounts.find(a => a.id === h.accountId)
-        const hDate = new Date(h.date.getFullYear(), h.date.getMonth(), h.date.getDate(), 12, 0, 0)
-        const manualTx: ForecastTransaction = {
-          id: `manual_${h.id}`,
-          transactionId: '',
-          date: hDate,
-          description: h.description,
-          amount: h.amount,
-          type: h.type,
-          categoryId: h.categoryId,
-          categoryName: category?.name || 'Uncategorized',
-          categoryColor: category?.color || '#6B7280',
-          accountId: h.accountId,
-          accountName: account?.name || 'Unknown Account',
-          isTransfer: h.isTransfer || false,
-          transferToAccountId: h.transferToAccountId,
-          isOverride: true,
-          isPosted: h.isPosted ?? true,
-          isEdited: false,
-          originalAmount: h.amount
-        }
-        forecastTransactions.push(manualTx)
-      }
-    })
-    return forecastTransactions.sort((a, b) => a.date.getTime() - b.date.getTime())
-  }
-
-  const generateClientLowBalanceAnalysis = (accounts: any[], transactions: any[], startDate: Date, endDate: Date): LowBalanceAnalysis[] => {
-    const analyses: LowBalanceAnalysis[] = []
-    
-    accounts.forEach(account => {
-      const balanceForecasts = generateClientBalanceForecast([account], transactions, startDate, endDate)
-      const lowestBalances = balanceForecasts
-        .map((forecast, index) => ({
-          date: forecast.date,
-          balance: forecast.accountBalances[0]?.balance || 0,
-          rank: index
-        }))
-        .sort((a, b) => a.balance - b.balance)
-        .slice(0, 5)
-      
-      const overallLowest = lowestBalances[0]
-      
-      const analysis: LowBalanceAnalysis = {
-        accountId: account.id,
-        accountName: account.name,
-        lowestBalances,
-        overallLowest: overallLowest ? {
-          date: overallLowest.date,
-          balance: overallLowest.balance
-        } : {
-          date: new Date(),
-          balance: 0
-        }
-      }
-      
-      analyses.push(analysis)
-    })
-    
-    return analyses
-  }
-
-  // Thin wrapper around the shared recurrence engine so the client
-  // renders the same forecast dates as the server.
-  const isTransactionOnDate = (transaction: any, _transactionDate: Date, checkDate: Date): boolean => {
-    return sharedIsTransactionOnDate(transaction, checkDate)
   }
 
   useEffect(() => {
@@ -404,81 +280,9 @@ const Forecast: React.FC = () => {
     setDisplayedTransactions(100) // Reset pagination when forecast changes
   }, [startDate, forecastMonths])
 
-  const handleResetForecast = async () => {
-    try {
-      // For now, just reload the data since we don't have the forecast API working
-      await loadForecastData()
-    } catch (error) {
-      console.error('Failed to reset forecast:', error)
-    }
-  }
+  // Balance forecast data is computed directly in render where needed.
+  // getBalanceForecastData and getSummaryStats removed — unused.
 
-  // Calculate summary statistics
-  const getSummaryStats = () => {
-    if (forecasts.length === 0) return null
-    
-    const startForecast = forecasts[0]
-    const endForecast = forecasts[forecasts.length - 1]
-    const lowestBalance = Math.min(...forecasts.map(f => f.totalBalance))
-    const lowestDate = forecasts.find(f => f.totalBalance === lowestBalance)
-    
-    return {
-      startBalance: startForecast.totalBalance,
-      endBalance: endForecast.totalBalance,
-      lowestBalance,
-      lowestDate: lowestDate?.date,
-      netChange: endForecast.totalBalance - startForecast.totalBalance
-    }
-  }
-
-    
-  // Prepare data for balance forecast chart
-  const getBalanceForecastData = () => {
-    if (forecasts.length === 0) return []
-    
-    // Get unique accounts from forecasts
-    const uniqueAccounts = new Set<string>()
-    forecasts.forEach(forecast => {
-      forecast.accountBalances.forEach(balance => {
-        uniqueAccounts.add(balance.accountId)
-      })
-    })
-    
-    // Create dataset for each account
-    const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899']
-    const accountColors: Record<string, string> = {}
-    let colorIndex = 0
-    
-    uniqueAccounts.forEach(accountId => {
-      accountColors[accountId] = colors[colorIndex % colors.length]
-      colorIndex++
-    })
-    
-    // For each account, create a data series
-    const chartData: any[] = []
-    
-    uniqueAccounts.forEach(accountId => {
-      const accountData = forecasts.map(forecast => {
-        const balance = forecast.accountBalances.find(ab => ab.accountId === accountId)
-        return {
-          label: formatDateForDisplay(forecast.date),
-          value: balance?.balance || 0,
-          color: accountColors[accountId]
-        }
-      })
-      
-      // Add account name to first data point for legend
-      if (accountData.length > 0) {
-        const firstBalance = forecasts[0].accountBalances.find(ab => ab.accountId === accountId)
-        ;(accountData[0] as any).accountName = firstBalance?.accountName || `Account ${accountId}`
-      }
-      
-      chartData.push(...accountData)
-    })
-    
-    return chartData
-  }
-  
   const [selectedTransactions, setSelectedTransactions] = useState<string[]>([])
   const [displayedTransactions, setDisplayedTransactions] = useState(100)
   
@@ -552,17 +356,12 @@ const Forecast: React.FC = () => {
         return
       }
 
-      // Find existing manual-edit override for this (transactionId, date)
       const dateKey = formatDateForStorage(currentForecastTx.date)
-      const existingOverride = historyData.find(
-        h => h.transactionId === currentForecastTx.transactionId && 
-             formatDateForStorage(h.date) === dateKey &&
-             h.isManualEdit
-      )
 
-      if (existingOverride) {
-        // Update the existing override
-        await historyApi.update(existingOverride.id, {
+      if (!currentForecastTx.transactionId) {
+        // Manual transaction — update the existing history row directly
+        const historyId = currentForecastTx.id.replace(/^manual_/, '')
+        await historyApi.update(historyId, {
           description: buf.description,
           amount: amt,
           date: dateKey,
@@ -571,17 +370,36 @@ const Forecast: React.FC = () => {
           type: currentForecastTx.type,
         })
       } else {
-        // Create a new manual-edit override history row
-        await historyApi.create({
-          transactionId: currentForecastTx.transactionId,
-          accountId: buf.accountId || currentForecastTx.accountId,
-          categoryId: currentForecastTx.categoryId,
-          date: dateKey,
-          description: buf.description,
-          amount: amt,
-          type: currentForecastTx.type,
-          isManualEdit: true,
-        })
+        // Recurring transaction — find or create a manual-edit override
+        const existingOverride = historyData.find(
+          h => h.transactionId === currentForecastTx.transactionId && 
+               formatDateForStorage(h.date) === dateKey &&
+               h.isManualEdit
+        )
+
+        if (existingOverride) {
+          // Update the existing override
+          await historyApi.update(existingOverride.id, {
+            description: buf.description,
+            amount: amt,
+            date: dateKey,
+            accountId: buf.accountId || currentForecastTx.accountId,
+            categoryId: currentForecastTx.categoryId,
+            type: currentForecastTx.type,
+          })
+        } else {
+          // Create a new manual-edit override history row
+          await historyApi.create({
+            transactionId: currentForecastTx.transactionId,
+            accountId: buf.accountId || currentForecastTx.accountId,
+            categoryId: currentForecastTx.categoryId,
+            date: dateKey,
+            description: buf.description,
+            amount: amt,
+            type: currentForecastTx.type,
+            isManualEdit: true,
+          })
+        }
       }
 
       // Silent reload keeps the table mounted, so the browser preserves
@@ -600,6 +418,11 @@ const Forecast: React.FC = () => {
     try {
       const currentForecastTx = transactions.find(ftx => ftx.id === forecastRowId)
       if (!currentForecastTx) return
+
+      if (!currentForecastTx.transactionId) {
+        // Manual transaction — nothing to reset, just cancel the edit
+        return
+      }
 
       const dateKey = formatDateForStorage(currentForecastTx.date)
       const existingOverride = historyData.find(
@@ -673,32 +496,52 @@ const Forecast: React.FC = () => {
     }
   }
 
-  // Delete a single forecast occurrence by creating a suppressed history row.
-  // This removes it from the Forecast view but keeps it in History for record-keeping.
+  // Delete a single forecast occurrence.
+  // For recurring transactions: create a suppressed history row.
+  // For manual transactions: mark the original history entry as posted.
   const deleteEditRow = async (forecastRowId: string) => {
     const currentForecastTx = transactions.find(ftx => ftx.id === forecastRowId)
     if (!currentForecastTx) {
       alert('Could not locate the forecast row to delete.')
       return
     }
+    const isManual = !currentForecastTx.transactionId
     const ok = window.confirm(
       `Delete this forecast occurrence on ${formatDateForDisplay(currentForecastTx.date)}?\n\n` +
-      `This will remove it from the Forecast view and move it to History. ` +
-      `The underlying transaction will continue to generate future occurrences.`
+      (isManual
+        ? `This will remove the manual transaction from the Forecast and History.`
+        : `This will remove it from the Forecast view and move it to History. ` +
+          `The underlying transaction will continue to generate future occurrences.`)
     )
     if (!ok) return
     try {
-      // Create a suppressed history row to hide this occurrence from forecast
-      await historyApi.create({
-        transactionId: currentForecastTx.transactionId,
-        accountId: currentForecastTx.accountId,
-        categoryId: currentForecastTx.categoryId,
-        date: formatDateForStorage(currentForecastTx.date),
-        description: currentForecastTx.description,
-        amount: currentForecastTx.amount,
-        type: currentForecastTx.type,
-        isSuppressed: true,
-      })
+      if (isManual) {
+        // Manual transaction: delete the underlying history row entirely.
+        const historyId = currentForecastTx.id.replace('manual_', '')
+        await historyApi.delete(historyId)
+      } else {
+        // Recurring transaction: suppress this occurrence.
+        // If it was already accepted (exists in historyData), update that row.
+        // Otherwise create a new suppressed history row.
+        const existing = historyData.find(
+          h => h.transactionId === currentForecastTx.transactionId &&
+            formatDateForStorage(h.date) === formatDateForStorage(currentForecastTx.date)
+        )
+        if (existing) {
+          await historyApi.update(existing.id, { isSuppressed: true })
+        } else {
+          await historyApi.create({
+            transactionId: currentForecastTx.transactionId,
+            accountId: currentForecastTx.accountId,
+            categoryId: currentForecastTx.categoryId,
+            date: formatDateForStorage(currentForecastTx.date),
+            description: currentForecastTx.description,
+            amount: currentForecastTx.amount,
+            type: currentForecastTx.type,
+            isSuppressed: true,
+          })
+        }
+      }
       await loadForecastData({ silent: true })
       cancelEditRow(forecastRowId)
     } catch (error: any) {
@@ -710,14 +553,19 @@ const Forecast: React.FC = () => {
   // Add a manual one-time transaction as a history row so it appears in
   // Forecast and History but NOT in the Budget (transactions table).
   const addManualTransaction = async () => {
-    if (!manualForm.description || !manualForm.amount || !manualForm.accountId || !manualForm.categoryId ||
-        manualForm.accountId === '' || manualForm.categoryId === '') {
+    if (!manualForm.description || !manualForm.amount || !manualForm.accountId || !manualForm.categoryId || !manualForm.type) {
       alert('Please fill in all required fields')
       return
     }
     try {
       const amountNum = parseFloat(manualForm.amount)
-      const finalAmount = manualForm.type === 'expense' ? -Math.abs(amountNum) : Math.abs(amountNum)
+      // For transfers preserve the user's sign; the transfer direction
+      // is handled by accountId / transferToAccountId.
+      const finalAmount = manualForm.isTransfer
+        ? amountNum
+        : manualForm.type === 'expense' ? -Math.abs(amountNum)
+        : manualForm.type === 'administrative' ? amountNum
+        : Math.abs(amountNum)
 
       await historyApi.create({
         accountId: manualForm.accountId,
@@ -738,7 +586,7 @@ const Forecast: React.FC = () => {
         date: formatDateForStorage(new Date()),
         accountId: '',
         categoryId: '',
-        type: 'expense',
+        type: '',
         isTransfer: false,
         transferToAccountId: '',
       })
@@ -752,16 +600,16 @@ const Forecast: React.FC = () => {
   }
 
   // True running totals per account, keyed by forecast row id.
-  // Walks transactions in chronological order, starting from the first
-  // BalanceForecast entry's per-account balances, and applies each
-  // transaction's amount to its account as we go.
+  // Walks transactions in chronological order, starting from each
+  // account's currentBalance, and applies each transaction's amount
+  // to its account as we go.
   const accountRunningTotalsByRow = React.useMemo<Record<string, Record<string, number>>>(() => {
     const result: Record<string, Record<string, number>> = {}
-    if (forecasts.length === 0 || transactions.length === 0) return result
+    if (transactions.length === 0) return result
 
     const totals: Record<string, number> = {}
-    forecasts[0].accountBalances.forEach(b => {
-      totals[b.accountId] = b.balance
+    accounts.forEach(a => {
+      totals[a.id] = a.currentBalance || 0
     })
 
     // Sort by date ascending to guarantee a correct running balance even if
@@ -771,10 +619,13 @@ const Forecast: React.FC = () => {
       if (tx.accountId) {
         totals[tx.accountId] = (totals[tx.accountId] ?? 0) + (tx.amount || 0)
       }
+      if (tx.isTransfer && tx.transferToAccountId) {
+        totals[tx.transferToAccountId] = (totals[tx.transferToAccountId] ?? 0) - (tx.amount || 0)
+      }
       result[tx.id] = { ...totals }
     })
     return result
-  }, [transactions, forecasts])
+  }, [transactions, accounts])
   
   // Calculate end date for display
   const endDate = createSafeDate(startDate)
@@ -816,9 +667,6 @@ const Forecast: React.FC = () => {
             <option value={48}>48 months</option>
             <option value={60}>60 months (Full Forecast)</option>
           </select>
-          <button className="btn-secondary" onClick={handleResetForecast}>
-            Reset Forecast
-          </button>
         </div>
       </div>
 
@@ -829,46 +677,48 @@ const Forecast: React.FC = () => {
           {lowBalanceAnalysis.length > 0 ? (
             lowBalanceAnalysis.map(analysis => {
               const lowest = analysis.overallLowest
-              const isCritical = lowest.balance < 500
-              const isWarning = lowest.balance >= 500 && lowest.balance < 1000
-              
-              if (!isCritical && !isWarning) return null
-              
+              const isNegative = lowest.balance < 0
+              const isFirstNegative = analysis.alertType === 'firstNegative'
+
               return (
-                <div 
-                  key={analysis.accountId} 
+                <div
+                  key={`${analysis.accountId}-${analysis.alertType}`}
                   className={`flex items-center justify-between p-4 border rounded-lg ${
-                    isCritical ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'
+                    isNegative ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'
                   }`}
                 >
                   <div className="flex items-center space-x-3">
-                    <div className={`w-3 h-3 rounded-full ${
-                      isCritical ? 'bg-red-500' : 'bg-yellow-500'
-                    }`}></div>
+                    {isNegative && <div className="w-3 h-3 rounded-full bg-red-500"></div>}
                     <div>
                       <p className={`font-medium ${
-                        isCritical ? 'text-red-900' : 'text-yellow-900'
+                        isNegative ? 'text-red-900' : 'text-gray-900'
                       }`}>
-                        {isCritical ? 'Critical' : 'Warning'}: {analysis.accountName}
+                        {analysis.accountName}
+                        {isNegative && (
+                          <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                            {isFirstNegative ? 'First Negative' : 'Critical'}
+                          </span>
+                        )}
                       </p>
                       <p className={`text-sm ${
-                        isCritical ? 'text-red-700' : 'text-yellow-700'
+                        isNegative ? 'text-red-700' : 'text-gray-600'
                       }`}>
-                        Balance drops to ${lowest.balance.toFixed(2)} on {formatDateForDisplay(lowest.date)}
+                        {isFirstNegative
+                          ? `Balance goes negative on ${formatDateForDisplay(lowest.date)}`
+                          : `Balance drops to ${lowest.balance.toFixed(2)} on ${formatDateForDisplay(lowest.date)}`}
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className={`font-medium ${
-                      isCritical ? 'text-red-600' : 'text-yellow-600'
+                      isNegative ? 'text-red-600' : 'text-gray-900'
                     }`}>
                       ${lowest.balance.toFixed(2)}
                     </p>
-                    <button className="btn-secondary text-xs mt-1">View Details</button>
                   </div>
                 </div>
               )
-            }).filter(Boolean)
+            })
           ) : (
             <div className="text-center py-8 text-gray-500">
               <p>No low balance alerts</p>
@@ -877,6 +727,17 @@ const Forecast: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Import Bank Data */}
+      <BankImportCard
+        accounts={accounts}
+        budgetTransactions={originalTransactions}
+        forecastTransactions={transactions}
+        historyData={historyData}
+        onImportComplete={() => loadForecastData({ silent: true })}
+        onHistoryChange={() => loadForecastData({ silent: true })}
+        categories={categories}
+      />
 
       {/* Forecast Transactions - DOMINANT FEATURE */}
       <div className="card">
@@ -914,7 +775,7 @@ const Forecast: React.FC = () => {
         {isAddingManual && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 p-4 bg-gray-50 rounded-lg mb-4">
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Description</label>
+              <label className="block text-xs text-gray-600 mb-1">Description <span className="text-red-500">*</span></label>
               <input
                 type="text"
                 className="input w-full"
@@ -924,7 +785,7 @@ const Forecast: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Amount</label>
+              <label className="block text-xs text-gray-600 mb-1">Amount <span className="text-red-500">*</span></label>
               <input
                 type="number"
                 step="0.01"
@@ -935,7 +796,7 @@ const Forecast: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Date</label>
+              <label className="block text-xs text-gray-600 mb-1">Date <span className="text-red-500">*</span></label>
               <input
                 type="date"
                 className="input w-full"
@@ -948,15 +809,16 @@ const Forecast: React.FC = () => {
               <select
                 className="input w-full"
                 value={manualForm.type}
-                onChange={e => setManualForm({ ...manualForm, type: e.target.value as 'income' | 'expense' | 'administrative' })}
+                onChange={e => setManualForm({ ...manualForm, type: e.target.value as 'income' | 'expense' | 'administrative' | '' })}
               >
+                <option value="">-- Select --</option>
                 <option value="expense">Expense</option>
                 <option value="income">Income</option>
                 <option value="administrative">Administrative</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Account</label>
+              <label className="block text-xs text-gray-600 mb-1">Account <span className="text-red-500">*</span></label>
               <select
                 className="input w-full"
                 value={manualForm.accountId}
@@ -997,7 +859,7 @@ const Forecast: React.FC = () => {
               </div>
             )}
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Category</label>
+              <label className="block text-xs text-gray-600 mb-1">Category <span className="text-red-500">*</span></label>
               <CategorySelector
                 categories={categories}
                 selectedCategoryId={manualForm.categoryId}
@@ -1011,11 +873,112 @@ const Forecast: React.FC = () => {
             </div>
             <div className="lg:col-span-6 flex justify-end">
               <button
-                className="btn-primary text-sm"
+                className="btn-primary text-sm disabled:opacity-50"
                 onClick={addManualTransaction}
+                disabled={!manualForm.description.trim() || !manualForm.amount || Number(manualForm.amount) === 0 || !manualForm.date || !manualForm.accountId || !manualForm.categoryId || !manualForm.type || (manualForm.isTransfer && !manualForm.transferToAccountId)}
               >
                 Add Transaction
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Account column visibility toggles */}
+        {accounts.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <span className="text-sm text-gray-600 font-medium">Show columns:</span>
+            {accounts.map(account => (
+              <label
+                key={account.id}
+                className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-sm cursor-pointer select-none border ${
+                  visibleAccountIds.includes(account.id)
+                    ? 'bg-blue-50 border-blue-200 text-blue-700'
+                    : 'bg-white border-gray-200 text-gray-500'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="form-checkbox h-3.5 w-3.5 rounded"
+                  checked={visibleAccountIds.includes(account.id)}
+                  onChange={() => toggleAccountVisibility(account.id)}
+                />
+                <span>{account.name}</span>
+              </label>
+            ))}
+            <button
+              type="button"
+              className="text-sm text-blue-600 hover:text-blue-800 underline ml-2"
+              onClick={resetVisibleAccounts}
+            >
+              Reset to default
+            </button>
+          </div>
+        )}
+
+        {/* Update Current Balances button */}
+        {accounts.length > 0 && (
+          <div className="mb-4">
+            <button
+              type="button"
+              className="btn-secondary text-sm"
+              onClick={openBalanceModal}
+            >
+              Update Current Balances
+            </button>
+          </div>
+        )}
+
+        {/* Balance Update Modal */}
+        {showBalanceModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Update Current Balances</h3>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead>
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Current Balance</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">New Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {accounts.map(account => (
+                      <tr key={account.id}>
+                        <td className="px-4 py-2 text-sm text-gray-900">{account.name}</td>
+                        <td className="px-4 py-2 text-sm text-right text-gray-600">
+                          ${account.currentBalance.toFixed(2)}
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          <input
+                            type="number"
+                            step="0.01"
+                            className="w-28 text-sm px-2 py-1 border rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-right"
+                            value={balanceEdits[account.id] ?? account.currentBalance.toFixed(2)}
+                            onChange={e => setBalanceEdits(prev => ({ ...prev, [account.id]: e.target.value }))}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setShowBalanceModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={handleSaveBalances}
+                >
+                  Save Balances
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1025,10 +988,16 @@ const Forecast: React.FC = () => {
           // With `table-fixed`, these widths are authoritative regardless
           // of whether a row is in view or edit mode — so column
           // boundaries never jiggle.
-          const accountBalances = forecasts.length > 0
+          const allAccountBalances = forecasts.length > 0
             ? forecasts[forecasts.length - 1].accountBalances
             : []
-          const accountCount = accountBalances.length
+          const displayAccounts = accounts.filter(a => visibleAccountIds.includes(a.id))
+          const displayBalances = (displayAccounts.length > 0 ? displayAccounts : accounts).map(a => ({
+            accountId: a.id,
+            accountName: a.name,
+            balance: a.currentBalance
+          }))
+          const accountCount = displayBalances.length
           const checkboxPct = 4
           const datePct = 10
           const amountPct = 10
@@ -1044,7 +1013,7 @@ const Forecast: React.FC = () => {
                   <col style={{ width: `${datePct}%` }} />
                   <col style={{ width: `${descPct}%` }} />
                   <col style={{ width: `${amountPct}%` }} />
-                  {accountBalances.map(a => (
+                  {displayBalances.map(a => (
                     <col key={`col-${a.accountId}`} style={{ width: `${accountPct}%` }} />
                   ))}
                 </colgroup>
@@ -1067,7 +1036,7 @@ const Forecast: React.FC = () => {
                     <th className="text-left py-3 px-3 text-sm font-medium text-gray-700">Date</th>
                     <th className="text-left py-3 px-3 text-sm font-medium text-gray-700">Description</th>
                     <th className="text-right py-3 px-3 text-sm font-medium text-gray-700">Amount</th>
-                    {accountBalances.map(a => (
+                    {displayBalances.map(a => (
                       <th key={a.accountId} className="text-right py-3 px-3 text-sm font-medium text-gray-700">
                         <div className="truncate" title={a.accountName}>{a.accountName}</div>
                         <div className="text-xs text-gray-500 font-normal truncate">
@@ -1083,11 +1052,12 @@ const Forecast: React.FC = () => {
                     const buf = editForms[transaction.id]
                     const rowTotals = accountRunningTotalsByRow[transaction.id] || {}
                     const originalTx = originalTransactions.find(tx => tx.id === transaction.transactionId)
-                    const rowClass = `border-b ${
+                    const rowClass = `border-b hover:bg-blue-50 ${
                       isEditing ? 'bg-blue-50' :
-                      transaction.isOverride ? 'bg-yellow-50' :
-                      transaction.isPosted ? 'bg-green-50' :
-                      'hover:bg-gray-50'
+                      transaction.isTransfer ? 'bg-yellow-50' :
+                      transaction.type === 'income' ? 'bg-green-50' :
+                      transaction.type === 'administrative' ? 'bg-gray-100' :
+                      ''
                     }`
                     return (
                       <React.Fragment key={transaction.id}>
@@ -1137,7 +1107,6 @@ const Forecast: React.FC = () => {
                                 <div className="min-w-0">
                                   <p className="font-medium text-gray-900 text-sm truncate">
                                     {transaction.description}
-                                    {transaction.isOverride && <span className="text-yellow-600 ml-1">(Override)</span>}
                                     {transaction.isEdited && (
                                       <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
                                         Edited
@@ -1145,12 +1114,37 @@ const Forecast: React.FC = () => {
                                     )}
                                   </p>
                                   <p className="text-xs text-gray-500 truncate">
-                                    {transaction.type === 'income' ? 'Income' : transaction.type === 'expense' ? 'Expense' : 'Administrative'} • {transaction.isPosted ? 'Posted' : 'Recurring'}
+                                    {transaction.type === 'income' ? 'Income' : transaction.type === 'expense' ? 'Expense' : 'Administrative'} • {!transaction.transactionId ? 'Manual' : 'Recurring'}
                                   </p>
                                 </div>
                               </div>
                             )}
                           </td>
+                          <td className="py-2 px-3 align-top text-right">
+                            {isEditing && buf ? (
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={buf.amount}
+                                onChange={(e) => updateEditField(transaction.id, { amount: e.target.value })}
+                                className="input-field text-sm w-28 text-right"
+                              />
+                            ) : (
+                              <span className={`text-sm font-medium ${transaction.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {transaction.amount >= 0 ? '+' : ''}${Math.abs(transaction.amount).toFixed(2)}
+                              </span>
+                            )}
+                          </td>
+                          {displayBalances.map(a => {
+                            const isAffected = transaction.accountId === a.accountId || (transaction.isTransfer && transaction.transferToAccountId === a.accountId)
+                            return (
+                              <td key={a.accountId} className="py-2 px-3 align-top text-right">
+                                <span className={`text-sm ${isAffected ? 'text-gray-900' : 'text-gray-300'}`}>
+                                  ${(rowTotals[a.accountId] ?? a.balance).toFixed(2)}
+                                </span>
+                              </td>
+                            )
+                          })}
                         </tr>
 
                         {isEditing && buf && (
@@ -1165,7 +1159,7 @@ const Forecast: React.FC = () => {
                                     className="input-field text-sm"
                                   >
                                     <option value="">Select Account</option>
-                                    {accountBalances.map(a => (
+                                    {allAccountBalances.map(a => (
                                       <option key={a.accountId} value={a.accountId}>{a.accountName}</option>
                                     ))}
                                   </select>
@@ -1245,7 +1239,8 @@ const Forecast: React.FC = () => {
                                   </button>
                                   <button
                                     onClick={() => saveEditRow(transaction.id)}
-                                    className="btn-primary text-sm"
+                                    disabled={!buf.description.trim() || !buf.amount || Number.isNaN(parseFloat(buf.amount))}
+                                    className="btn-primary text-sm disabled:opacity-50"
                                   >
                                     Save
                                   </button>

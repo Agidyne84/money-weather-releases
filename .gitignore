@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+server/node_modules/
+client/node_modules/
+
+# Build output
+server/dist/
+client/dist/
+
+# Logs
+*.log
+server_err.log
+server_out.log
+server.log
+
+# Database files
+server/database/budget.db
+server/database/budget.db.bak
+server/database/*.db
+server/database/*.bak
+
+# Debug scripts
+server/database/check-db-rows.js
+server/database/check-rows.js
+server/database/rows-report.txt
+
+# Environment variables
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*~
+
+# Electron build artifacts
+electron/dist/
+electron/client/dist/
+electron/server/
+
+# Mobile build artifacts
+client/android/
+
+# Temp / debug files
+server/*.txt
+server/*.log
+server/database/*.txt
+server/database/*.json
+server/database/*.js
+!server/database/schema.sql
+!server/database/migrate-check.js
+
+# Archived plan files
+.windsurf/plans/archive/

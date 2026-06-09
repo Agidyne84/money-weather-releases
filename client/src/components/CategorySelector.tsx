@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Category } from '../types'
-import { categoriesApi } from '../services/api'
+import { categoriesApi } from '../services/database'
 
 interface Props {
   categories: Category[]
@@ -26,6 +26,7 @@ const CategorySelector: React.FC<Props> = ({
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [newParentId, setNewParentId] = useState('')
+  const [newParentName, setNewParentName] = useState('')
   const [newColor, setNewColor] = useState(PRESET_COLORS[0])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -49,6 +50,7 @@ const CategorySelector: React.FC<Props> = ({
     setAdding(false)
     setNewName('')
     setNewParentId('')
+    setNewParentName('')
     setError('')
   }
 
@@ -63,17 +65,38 @@ const CategorySelector: React.FC<Props> = ({
       const maxSort = categories.length > 0
         ? Math.max(...categories.map(c => c.sortOrder || 0))
         : 0
+
+      let parentId = newParentId || undefined
+
+      // If user chose to create a new parent, create it first
+      if (newParentId === '__new_parent__') {
+        if (!newParentName.trim()) {
+          setError('New parent category name is required')
+          setSaving(false)
+          return
+        }
+        const parentPayload: Omit<Category, 'id' | 'createdAt'> = {
+          name: newParentName.trim(),
+          color: newColor,
+          sortOrder: maxSort + 1
+        }
+        const createdParent = await categoriesApi.create(parentPayload)
+        onCategoryAdded(createdParent)
+        parentId = createdParent.id
+      }
+
       const payload: Omit<Category, 'id' | 'createdAt'> = {
         name: newName.trim(),
-        parentId: newParentId || undefined,
+        parentId,
         color: newColor,
-        sortOrder: maxSort + 1
+        sortOrder: maxSort + 2
       }
       const created = await categoriesApi.create(payload)
       onCategoryAdded(created)
       setAdding(false)
       setNewName('')
       setNewParentId('')
+      setNewParentName('')
     } catch (err: any) {
       setError(err?.response?.data?.error || err?.message || 'Failed to create category')
     } finally {
@@ -137,7 +160,18 @@ const CategorySelector: React.FC<Props> = ({
                 {parentCategories.map(p => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
+                <option value="__new_parent__">+ Create new parent…</option>
               </select>
+              {newParentId === '__new_parent__' && (
+                <input
+                  type="text"
+                  className="form-input w-full text-sm mt-1"
+                  value={newParentName}
+                  onChange={e => setNewParentName(e.target.value)}
+                  placeholder="New parent name"
+                  autoFocus
+                />
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Color</label>

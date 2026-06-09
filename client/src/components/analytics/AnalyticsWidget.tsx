@@ -8,18 +8,22 @@ interface AnalyticsWidgetProps {
   type: 'pie' | 'line' | 'bar'
   data: any[]
   className?: string
+  showLegend?: boolean
+  onSliceClick?: (label: string) => void
 }
 
-const AnalyticsWidget: React.FC<AnalyticsWidgetProps> = ({ 
-  title, 
-  type, 
-  data, 
-  className = '' 
+const AnalyticsWidget: React.FC<AnalyticsWidgetProps> = ({
+  title,
+  type,
+  data,
+  className = '',
+  showLegend = true,
+  onSliceClick,
 }) => {
   const renderChart = () => {
     switch (type) {
       case 'pie':
-        return <PieChart data={data} />
+        return <PieChart data={data} showLegend={showLegend} onSliceClick={onSliceClick} />
       case 'line':
         return <LineChart data={data} />
       case 'bar':

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Account } from '../types'
-import { accountsApi } from '../services/api'
+import { accountsApi } from '../services/database'
 import { formatDateForStorage } from '../utils/dateUtils'
 
 interface BalanceAdjustmentProps {

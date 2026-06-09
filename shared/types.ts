@@ -36,6 +36,8 @@ export interface Transaction {
   account_id: string
   type: 'income' | 'expense'
   is_active: boolean
+  isTransfer: boolean
+  transferToAccountId?: string
   created_at?: string
   updated_at?: string
 }

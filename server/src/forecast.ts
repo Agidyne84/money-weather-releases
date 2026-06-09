@@ -23,11 +23,22 @@ export function generateBalanceForecast(
     // Update account balances
     const accountBalanceChanges: { [key: string]: number } = {}
     dailyTransactions.forEach(tx => {
+      // Source account
       if (!accountBalanceChanges[tx.account_id]) {
         accountBalanceChanges[tx.account_id] = 0
       }
       accountBalanceChanges[tx.account_id] += tx.amount
       accountBalances[tx.account_id] = (accountBalances[tx.account_id] || 0) + tx.amount
+      
+      // Transfer: destination account receives the opposite amount
+      if ((tx.is_transfer || tx.isTransfer) && tx.transfer_to_account_id) {
+        if (!accountBalanceChanges[tx.transfer_to_account_id]) {
+          accountBalanceChanges[tx.transfer_to_account_id] = 0
+        }
+        const transferAmount = Math.abs(tx.amount)
+        accountBalanceChanges[tx.transfer_to_account_id] += transferAmount
+        accountBalances[tx.transfer_to_account_id] = (accountBalances[tx.transfer_to_account_id] || 0) + transferAmount
+      }
     })
     
     // Create forecast entry
@@ -79,6 +90,8 @@ export function generateForecastTransactions(
           categoryColor: category?.color || '#6B7280',
           accountId: tx.account_id,
           accountName: account?.name || 'Unknown Account',
+          isTransfer: tx.is_transfer === 1,
+          transferToAccountId: tx.transfer_to_account_id,
           isOverride: tx.start_date === tx.end_date, // Manual adjustments have same start/end
           isPosted: currentDate < new Date(), // Past transactions are "posted"
           originalAmount: tx.amount

@@ -62,8 +62,8 @@ export const validateTransaction = (transaction: any): ValidationResult => {
     errors.push('Name is required')
   }
 
-  if (!transaction.amount || typeof transaction.amount !== 'number' || transaction.amount === 0) {
-    errors.push('Amount cannot be zero')
+  if (typeof transaction.amount !== 'number' || Number.isNaN(transaction.amount)) {
+    errors.push('Amount is required')
   }
 
   if (!transaction.frequencyValue || typeof transaction.frequencyValue !== 'number' || transaction.frequencyValue < 1) {

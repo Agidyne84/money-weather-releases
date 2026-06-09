@@ -44,8 +44,12 @@ export interface Transaction {
   pauseStartDate?: Date
   pauseEndDate?: Date
   categoryId: string
+  categoryName?: string
   accountId: string
+  accountName?: string
   type: 'income' | 'expense' | 'administrative'
+  isTransfer: boolean
+  transferToAccountId?: string
   isActive: boolean
   createdAt?: string
   updatedAt?: string
@@ -80,8 +84,12 @@ export interface HistoricalTransaction {
   categoryId: string
   date: Date
   description: string
+  bankDescription?: string
   amount: number
   type: 'income' | 'expense' | 'administrative'
+  isTransfer: boolean
+  transferToAccountId?: string
+  isExcluded: boolean
   archivedAt: string
 }
 
@@ -105,6 +113,8 @@ export interface ForecastTransaction {
   categoryColor: string
   accountId: string
   accountName: string
+  isTransfer: boolean
+  transferToAccountId?: string
   isOverride: boolean
   isPosted: boolean
   isEdited?: boolean
@@ -132,6 +142,7 @@ export interface BalanceForecast {
 export interface LowBalanceAnalysis {
   accountId: string
   accountName: string
+  alertType?: 'lowest' | 'firstNegative'
   lowestBalances: {
     date: Date
     balance: number
@@ -186,6 +197,8 @@ export interface TransactionFormData {
   categoryId: string
   accountId: string
   type: 'income' | 'expense' | 'administrative'
+  isTransfer: boolean
+  transferToAccountId?: string
 }
 
 export interface AccountFormData {

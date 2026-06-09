@@ -1,30 +1,65 @@
 {
   "name": "budget-app-electron",
-  "version": "1.0.0",
-  "description": "Budget App Electron Wrapper",
+  "version": "1.1.2",
+  "description": "Money Weather - Budget App Electron Wrapper",
+  "author": "Monroe Engineering",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "start:dev": "NODE_ENV=development electron .",
     "build": "electron-builder",
-    "dist": "electron-builder --publish=never"
+    "dist": "electron-builder --publish=never",
+    "publish": "electron-builder --publish=always"
   },
   "dependencies": {
-    "electron": "^28.1.0"
+    "electron-updater": "^6.1.7"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
+    "electron": "^28.1.0",
     "electron-builder": "^24.9.1"
   },
   "build": {
     "appId": "com.budgetapp.desktop",
-    "productName": "Budget App",
+    "productName": "Money Weather",
     "directories": {
       "output": "dist"
     },
     "files": [
       "main.js",
-      "../client/dist/**/*",
-      "../server/dist/**/*",
-      "../server/database/**/*"
+      "preload.js",
+      "assets/**/*",
+      "client/dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "server",
+        "to": "server"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico",
+      "signingHashAlgorithms": []
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Money Weather",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Agidyne84",
+        "repo": "money-weather-releases",
+        "private": false,
+        "releaseType": "release"
+      }
     ]
   }
 }

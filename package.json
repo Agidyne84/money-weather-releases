@@ -1,0 +1,18 @@
+{
+  "name": "budget-app",
+  "version": "1.1.2",
+  "description": "Money Weather - root workspace",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "build": "cd server && npm run build && cd ../client && npm run build && cd .. && npm run copy:server",
+    "build:electron": "npm run build && cd electron && npm run build",
+    "start:electron": "cd electron && npm run start:dev",
+    "copy:server": "powershell -ExecutionPolicy Bypass -File copy-deps.ps1",
+    "install:all": "cd server && npm install && cd ../client && npm install && cd ../electron && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

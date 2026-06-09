@@ -1,0 +1,53 @@
+name: Build and Release Desktop App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build shared types
+        run: cd shared && npm ci && npm run build
+
+      - name: Build server
+        run: cd server && npm ci && npm run build
+
+      - name: Build client
+        run: cd client && npm ci && npm run build
+
+      - name: Copy client build to electron
+        run: |
+          if (Test-Path electron/client/dist) { Remove-Item electron/client/dist -Recurse -Force }
+          Copy-Item client/dist electron/client/dist -Recurse
+
+      - name: Copy server build to electron
+        run: |
+          if (Test-Path electron/server) { Remove-Item electron/server -Recurse -Force }
+          Copy-Item server/dist electron/server/dist -Recurse
+          Copy-Item server/node_modules electron/server/node_modules -Recurse
+
+      - name: Install Electron dependencies
+        run: cd electron && npm ci
+
+      - name: Build and Publish Electron App
+        run: cd electron && npx electron-builder --publish=always
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}

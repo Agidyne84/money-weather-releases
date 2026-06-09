@@ -14,18 +14,9 @@ const FrequencySelector: React.FC<FrequencySelectorProps> = ({ value, onChange, 
   const [showCustomize, setShowCustomize] = useState(false)
   const [weekDays, setWeekDays] = useState<boolean[]>([false, false, false, false, false, false, false])
   const [monthDays, setMonthDays] = useState<boolean[]>(Array.from({ length: 31 }, () => false))
-  const [monthWeekPattern, setMonthWeekPattern] = useState({
-    week: 1,
-    dayOfWeek: 0
-  })
   const [yearMonthPattern, setYearMonthPattern] = useState({
     months: [] as number[],
     day: 1
-  })
-  const [yearWeekPattern, setYearWeekPattern] = useState({
-    week: 1,
-    dayOfWeek: 0,
-    months: [] as number[]
   })
   const [monthPatternType, setMonthPatternType] = useState<'specific' | 'week'>('specific')
   const [yearPatternType, setYearPatternType] = useState<'month' | 'week'>('month')
@@ -64,7 +55,6 @@ const FrequencySelector: React.FC<FrequencySelectorProps> = ({ value, onChange, 
           return newDays
         })
       } else if (value.unit === 'months') {
-        setMonthWeekPattern({ week: Math.ceil(dayOfMonth / 7), dayOfWeek: date.getDay() })
         // Initialize month days with start date
         setMonthDays(prev => {
           const newDays = [...prev]
@@ -78,7 +68,6 @@ const FrequencySelector: React.FC<FrequencySelectorProps> = ({ value, onChange, 
           months: [month], 
           day: dayOfMonth 
         }))
-        setYearWeekPattern({ months: [month], week: Math.ceil(dayOfMonth / 7), dayOfWeek: date.getDay() })
       }
     }
   }, [value.value, value.unit, startDate])
@@ -234,24 +223,6 @@ const FrequencySelector: React.FC<FrequencySelectorProps> = ({ value, onChange, 
     }
   }
 
-  const handleMonthWeekPatternChange = () => {
-    onChange({
-      unit: 'months',
-      value: value.value,
-      customPattern: `week:${monthWeekPattern.week},day:${monthWeekPattern.dayOfWeek}`
-    })
-  }
-
-  const handleYearMonthPatternChange = () => {
-    if (yearMonthPattern.months.length > 0) {
-      onChange({
-        unit: 'years',
-        value: value.value,
-        customPattern: `months:${yearMonthPattern.months.join(',')},day:${yearMonthPattern.day}`
-      })
-    }
-  }
-
   const handleYearMonthToggle = (monthIndex: number) => {
     // Don't allow unselecting the start date month
     if (startDate && value.unit === 'years') {
@@ -297,16 +268,6 @@ const FrequencySelector: React.FC<FrequencySelectorProps> = ({ value, onChange, 
           customPattern: customPattern
         })
       }
-    }
-  }
-
-  const handleYearWeekPatternChange = () => {
-    if (yearWeekPattern.months.length > 0) {
-      onChange({
-        unit: 'years',
-        value: value.value,
-        customPattern: `months:${yearWeekPattern.months.join(',')},week:${yearWeekPattern.week},day:${yearWeekPattern.dayOfWeek}`
-      })
     }
   }
 
@@ -411,7 +372,6 @@ const FrequencySelector: React.FC<FrequencySelectorProps> = ({ value, onChange, 
                         const dayOfMonth = date.getDate()
                         const week = Math.ceil(dayOfMonth / 7)
                         const dayOfWeek = date.getDay()
-                        setMonthWeekPattern({ week, dayOfWeek })
                         onChange({
                           ...value,
                           customPattern: `week:${week},day:${dayOfWeek}`
@@ -505,7 +465,6 @@ const FrequencySelector: React.FC<FrequencySelectorProps> = ({ value, onChange, 
                         const month = date.getMonth()
                         const week = Math.ceil(dayOfMonth / 7)
                         const dayOfWeek = date.getDay()
-                        setYearWeekPattern({ months: [month], week, dayOfWeek })
                         onChange({
                           ...value,
                           customPattern: `months:${month},week:${week},day:${dayOfWeek}`

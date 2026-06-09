@@ -91,6 +91,55 @@ export class Database {
       'is_transfer',
       'INTEGER DEFAULT 0'
     )
+    await this.ensureColumn(
+      'historical_transactions',
+      'is_excluded',
+      'INTEGER NOT NULL DEFAULT 0'
+    )
+    await this.ensureColumn(
+      'historical_transactions',
+      'bank_description',
+      'TEXT'
+    )
+
+    // 2b) Recreate transaction_rules if it is using the old schema (missing
+    //     the transaction_id column added in the Phase 3 rules engine).
+    //     There are no user-created rules in the old schema, so this is safe.
+    const ruleCols: any[] = await this.all('PRAGMA table_info(transaction_rules)')
+    const hasTransactionId = ruleCols.some((c: any) => c.name === 'transaction_id')
+    if (!hasTransactionId) {
+      await this.run('DROP TABLE IF EXISTS transaction_rules')
+      await this.run(`
+        CREATE TABLE transaction_rules (
+          id TEXT PRIMARY KEY,
+          transaction_id TEXT,
+          account_id TEXT,
+          restrict_to_account INTEGER NOT NULL DEFAULT 0,
+          pattern TEXT NOT NULL,
+          category_id TEXT NOT NULL,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          match_count INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL,
+          FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL,
+          FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT
+        )
+      `)
+      console.log('Migration: recreated transaction_rules with new schema')
+    }
+
+    // 3) Fix any rows in `transactions` that have a NULL id (can happen if
+    //    rows were inserted before the id column existed or via raw SQL).
+    const nullIdRows = await this.all("SELECT rowid FROM transactions WHERE id IS NULL")
+    for (const row of nullIdRows) {
+      const newId = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      await this.run('UPDATE transactions SET id = ? WHERE rowid = ?', [newId, row.rowid])
+      console.log(`Migration: assigned id ${newId} to transaction rowid ${row.rowid}`)
+    }
+    if (nullIdRows.length > 0) {
+      console.log(`Migration: fixed ${nullIdRows.length} transaction(s) with null id`)
+    }
 
     console.log('Database initialized successfully')
   }
@@ -156,7 +205,8 @@ let databaseInstance: Database | null = null
 
 export function getDatabase(): Database {
   if (!databaseInstance) {
-    const dbPath = resolveServerAsset('database/budget.db')
+    const dbPath = process.env.BUDGET_DB_PATH || resolveServerAsset('database/budget.db')
+    console.log(`[DB] Using database path: ${dbPath}`)
     databaseInstance = new Database(dbPath)
   }
   return databaseInstance

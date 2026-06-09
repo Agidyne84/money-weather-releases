@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Transaction } from '../types'
 
 const Transactions: React.FC = () => {
-  const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
