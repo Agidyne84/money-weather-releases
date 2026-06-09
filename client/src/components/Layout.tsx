@@ -6,6 +6,7 @@ import ScrollToTop from './ScrollToTop'
 import MobileBottomNav from './MobileBottomNav'
 import AppLock from './AppLock'
 import FirstTimeLockSetup from './FirstTimeLockSetup'
+import MobileUpdatePrompt from './MobileUpdatePrompt'
 import { isLockEnabled, isLockSetupComplete } from '../services/lockService'
 import { getCloudSyncSettings, checkCloudSyncStatus, performSync } from '../services/syncEngine'
 import { isDirty } from '../services/dirtyTracker'
@@ -162,6 +163,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {lockReady && locked && <AppLock onUnlock={handleUnlock} />}
 
       <UpdateStatus />
+      {isNativePlatform() && <MobileUpdatePrompt />}
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
