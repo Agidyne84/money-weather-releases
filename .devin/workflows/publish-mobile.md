@@ -37,36 +37,51 @@ Update these files with the new version:
    }
    ```
 
-## Step 2: Sync web assets
-// turbo
-```bash
-cd client
-npx cap sync
+## Step 2: Build and publish (automated)
+Run the PowerShell script from the project root:
+
+```powershell
+# Set your GitHub token
+$env:GH_TOKEN = "ghp_xxxxxxxx"
+
+# Build APK and upload to the release created by desktop publish
+.\publish-mobile.ps1 -Version "X.Y.Z" -Build
+
+# Or, if APK is already built:
+.\publish-mobile.ps1 -Version "X.Y.Z" -SkipBuild
+
+# Or, to overwrite an existing APK on the release:
+.\publish-mobile.ps1 -Version "X.Y.Z" -SkipBuild -Force
 ```
 
-## Step 3: Build release APK
-```bash
-cd client/android
-.\gradlew.bat assembleRelease
-```
-
-Output: `client/android/app/build/outputs/apk/release/app-release.apk`
+The script will:
+1. Sync Capacitor (`npx cap sync`) if `-Build` is used
+2. Build the release APK (`gradlew assembleRelease`) if `-Build` is used
+3. Find the existing GitHub release by tag (created by desktop `npm run publish`)
+4. Upload `app-release.apk` as a release asset
+5. Update `mobile-version.json` with the correct `versionCode` and `downloadUrl`
+6. Commit and push the updated `mobile-version.json`
 
 > **Important**: APK must be signed with the same keystore as previous releases, or Android will reject the update install.
 
-## Step 4: Upload APK to GitHub Release
-Option A — GitHub CLI:
+## Manual steps (if script fails)
+
+### Build release APK
+```bash
+cd client
+npx cap sync
+cd android
+.\gradlew.bat assembleRelease
+```
+Output: `client/android/app/build/outputs/apk/release/app-release.apk`
+
+### Upload APK to GitHub Release
 ```bash
 gh release upload vX.Y.Z client/android/app/build/outputs/apk/release/app-release.apk
 ```
+Or drag-and-drop on the release page.
 
-Option B — Drag and drop on the release page:
-https://github.com/Agidyne84/money-weather-releases/releases
-
-Option C — Use the desktop publish script (upload manually via GitHub web UI):
-After `npm run publish` completes for desktop, edit the release and attach the APK.
-
-## Step 5: Commit and push `mobile-version.json`
+### Commit and push `mobile-version.json`
 ```bash
 git add mobile-version.json client/android/app/build.gradle
 git commit -m "Bump mobile to vX.Y.Z"
