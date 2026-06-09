@@ -36,6 +36,8 @@ const CloudSyncSettings: React.FC = () => {
   const [pinForPassphrase, setPinForPassphrase] = useState('')
   const [showPinInput, setShowPinInput] = useState(false)
   const [pendingAction, setPendingAction] = useState<'push' | 'pull' | 'sync' | null>(null)
+  const [pendingPathSetup, setPendingPathSetup] = useState<string | null>(null)
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
   const [fileStatus, setFileStatus] = useState<string>('')
 
   const loadSettings = useCallback(async () => {
@@ -76,33 +78,85 @@ const CloudSyncSettings: React.FC = () => {
     }
   }
 
+  const createInitialBackup = async (filePath: string) => {
+    setLoading(true)
+    setMessage(null)
+    try {
+      await pushCloudBackup(filePath)
+      setMessage({ type: 'success', text: 'Cloud backup file created successfully.' })
+      loadSettings()
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const finalizePathSelection = async (filePath: string) => {
+    await setCloudSyncPath(filePath)
+    setSettings(prev => ({ ...prev, filePath }))
+
+    // Prompt for passphrase if not yet set
+    const hp = await hasStoredPassphrase()
+    if (!hp) {
+      setPendingPathSetup(filePath)
+      setShowPassphraseSetup(true)
+      return
+    }
+
+    // If passphrase exists but not in session, just save path and let user unlock later
+    const sp = getSessionPassphrase()
+    if (!sp) {
+      setMessage({ type: 'success', text: 'Backup path set. Unlock passphrase to create the initial backup.' })
+      loadSettings()
+      return
+    }
+
+    // Create initial encrypted backup
+    await createInitialBackup(filePath)
+  }
+
   const handlePickFile = async () => {
     if (!isNative) {
-      // Desktop: show a simple text input for file path
-      const path = prompt('Enter the full file path for your cloud backup:', settings.filePath || '')
-      if (path) {
-        await setCloudSyncPath(path)
-        setSettings(prev => ({ ...prev, filePath: path }))
-        loadSettings()
+      // Desktop: use Electron folder picker
+      const electronAPI = (window as any).electronAPI
+      if (electronAPI?.showOpenDirectoryDialog) {
+        const result = await electronAPI.showOpenDirectoryDialog({
+          title: 'Choose folder for cloud backup',
+        })
+        if (!result.canceled && result.filePaths.length > 0) {
+          const folderPath = result.filePaths[0]
+          const separator = folderPath.includes('\\') ? '\\' : '/'
+          const filePath = `${folderPath}${separator}cloud-backup.budgetbackup`
+          await finalizePathSelection(filePath)
+        }
+      } else {
+        // Fallback to prompt
+        const path = prompt('Enter the full file path for your cloud backup:', settings.filePath || '')
+        if (path) await finalizePathSelection(path)
       }
       return
     }
 
-    // Mobile: use a default path in Documents
-    const defaultPath = settings.filePath || 'MoneyWeather/cloud-backup.budgetbackup'
-    const path = prompt('Enter the backup file path (relative to Documents):', defaultPath)
-    if (path) {
-      try {
-        await Filesystem.mkdir({
-          path: path.split('/').slice(0, -1).join('/') || '',
-          directory: Directory.Documents,
-          recursive: true,
-        }).catch(() => {})
-      } catch {}
-      await setCloudSyncPath(path)
-      setSettings(prev => ({ ...prev, filePath: path }))
-      loadSettings()
-    }
+    // Mobile: show location picker
+    setShowLocationPicker(true)
+  }
+
+  const selectMobileLocation = async () => {
+    setShowLocationPicker(false)
+    const folderName = 'MoneyWeather'
+    const fileName = 'cloud-backup.budgetbackup'
+    const relativePath = `${folderName}/${fileName}`
+
+    try {
+      await Filesystem.mkdir({
+        path: folderName,
+        directory: Directory.Documents,
+        recursive: true,
+      }).catch(() => {})
+    } catch {}
+
+    await finalizePathSelection(relativePath)
   }
 
   const doSyncAction = async (action: 'push' | 'pull' | 'sync') => {
@@ -186,6 +240,12 @@ const CloudSyncSettings: React.FC = () => {
       setConfirmPassphrase('')
       setMessage({ type: 'success', text: 'Passphrase saved securely.' })
       setSessionPassphrase(getSessionPassphrase())
+
+      // If this was triggered during path setup, create the initial backup
+      if (pendingPathSetup) {
+        await createInitialBackup(pendingPathSetup)
+        setPendingPathSetup(null)
+      }
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
     } finally {
@@ -318,6 +378,33 @@ const CloudSyncSettings: React.FC = () => {
             </p>
           )}
         </>
+      )}
+
+      {/* Mobile Location Picker */}
+      {showLocationPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900">Choose Backup Location</h3>
+            <p className="text-sm text-gray-600">
+              Select where to save your encrypted cloud backup file on this device.
+            </p>
+            <div className="space-y-2">
+              <button
+                onClick={() => selectMobileLocation()}
+                className="w-full text-left px-4 py-3 bg-gray-50 rounded-lg hover:bg-blue-50 border border-gray-200 hover:border-blue-300 transition-colors"
+              >
+                <div className="font-medium text-gray-900">Documents</div>
+                <div className="text-xs text-gray-500">MoneyWeather/cloud-backup.budgetbackup</div>
+              </button>
+            </div>
+            <button
+              onClick={() => setShowLocationPicker(false)}
+              className="w-full px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       {showPassphraseSetup && (

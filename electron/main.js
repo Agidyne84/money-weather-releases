@@ -322,6 +322,15 @@ ipcMain.handle('dialog:open', async (event, options) => {
   return result;
 });
 
+// Native Open Directory dialog
+ipcMain.handle('dialog:open-directory', async (event, options) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: options?.title || 'Select Folder',
+    properties: ['openDirectory'],
+  });
+  return result;
+});
+
 // File write
 ipcMain.handle('fs:write', async (event, filePath, data) => {
   await fs.promises.writeFile(filePath, Buffer.from(data));

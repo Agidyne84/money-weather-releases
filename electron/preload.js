@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Native file dialogs
   showSaveDialog: (options) => ipcRenderer.invoke('dialog:save', options),
   showOpenDialog: (options) => ipcRenderer.invoke('dialog:open', options),
+  showOpenDirectoryDialog: (options) => ipcRenderer.invoke('dialog:open-directory', options),
 
   // File I/O (for Electron-native save/load of backup files)
   writeFile: (filePath, data) => ipcRenderer.invoke('fs:write', filePath, data),
