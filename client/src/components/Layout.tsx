@@ -7,6 +7,7 @@ import MobileBottomNav from './MobileBottomNav'
 import AppLock from './AppLock'
 import FirstTimeLockSetup from './FirstTimeLockSetup'
 import MobileUpdatePrompt from './MobileUpdatePrompt'
+import AppVersion from './AppVersion'
 import { isLockEnabled, isLockSetupComplete } from '../services/lockService'
 import { getCloudSyncSettings, checkCloudSyncStatus, performSync } from '../services/syncEngine'
 import { isDirty } from '../services/dirtyTracker'
@@ -248,6 +249,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {!isNativePlatform() && <ConnectionStatus />}
 
       {isNativePlatform() && <MobileBottomNav />}
+      {isNativePlatform() && <AppVersion />}
 
       <ScrollToTop />
     </div>
