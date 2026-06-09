@@ -1,8 +1,7 @@
 ﻿{
-  "version": "1.1.5",
-  "versionCode": 10105,
-  "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.5/app-release.apk",
-  "force": false,
-  "releaseNotes": "New app icon and bug fixes"
+    "version":  "1.1.5",
+    "versionCode":  10105,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.5/app-release.apk",
+    "force":  false,
+    "releaseNotes":  "New app icon and bug fixes"
 }
-

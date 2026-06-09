@@ -47,6 +47,7 @@ electron/server/
 
 # Mobile build artifacts
 client/android/
+!client/android/app/build.gradle
 
 # Temp / debug files
 server/*.txt
