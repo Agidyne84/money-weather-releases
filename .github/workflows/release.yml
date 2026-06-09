@@ -24,9 +24,6 @@ jobs:
       - name: Install root dependencies
         run: npm ci
 
-      - name: Build shared types
-        run: cd shared && npm ci && npm run build
-
       - name: Build server
         run: cd server && npm ci && npm run build
 
@@ -50,4 +47,4 @@ jobs:
       - name: Build and Publish Electron App
         run: cd electron && npx electron-builder --publish=always
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
