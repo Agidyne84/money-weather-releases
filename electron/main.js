@@ -261,6 +261,32 @@ function createWindow() {
         { role: 'togglefullscreen' },
       ],
     },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Check for Updates',
+          click: () => {
+            console.log('[Updater] Manual check triggered from menu');
+            autoUpdater.checkForUpdates().catch((err) => {
+              console.error('[Updater] Manual check failed:', err.message);
+              dialog.showMessageBox(mainWindow, {
+                type: 'warning',
+                title: 'Update Check Failed',
+                message: 'Could not check for updates.',
+                detail: err.message,
+                buttons: ['OK'],
+              }).catch(() => {});
+            });
+          },
+        },
+        { type: 'separator' },
+        {
+          label: `Version ${app.getVersion()}`,
+          enabled: false,
+        },
+      ],
+    },
   ];
 
   const menu = Menu.buildFromTemplate(template);
@@ -329,6 +355,12 @@ function setupAutoUpdaterHandlers() {
 
   autoUpdater.on('update-not-available', () => {
     console.log('[Updater] App is up to date.');
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'No Updates Available',
+      message: 'You are running the latest version of Money Weather.',
+      buttons: ['OK'],
+    }).catch(() => {});
   });
 
   autoUpdater.on('download-progress', (progress) => {
