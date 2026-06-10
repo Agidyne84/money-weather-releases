@@ -13,13 +13,13 @@
     StrCmp $R0 "" notSilent
 
     ; Per-user install found
-    StrCpy $isPerMachine "0"
+    StrCpy $R1 "0"
     SetShellVarContext current
     Goto doneSilent
 
   isMachine:
     ; Per-machine install found
-    StrCpy $isPerMachine "1"
+    StrCpy $R1 "1"
     SetShellVarContext all
 
   doneSilent:
