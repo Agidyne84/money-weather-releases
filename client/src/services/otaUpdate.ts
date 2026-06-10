@@ -1,7 +1,7 @@
 // Mobile OTA (Over-The-Air) Update Service
 // Checks remote version JSON and triggers APK download + install on Android
 
-import { Capacitor } from '@capacitor/core'
+import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import { Preferences } from '@capacitor/preferences'
 import { registerPlugin } from '@capacitor/core'
@@ -35,16 +35,34 @@ export interface MobileVersionInfo {
   releaseNotes: string
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const response = await fetch(url, { signal: controller.signal })
-    clearTimeout(timeoutId)
-    return response
-  } catch (err) {
-    clearTimeout(timeoutId)
-    throw err
+async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: number; data: MobileVersionInfo | null }> {
+  if (Capacitor.isNativePlatform()) {
+    // Use CapacitorHttp for native requests — bypasses WebView CORS/fetch issues
+    try {
+      const response = await CapacitorHttp.get({ url, readTimeout: FETCH_TIMEOUT_MS, connectTimeout: 10000 })
+      if (response.status < 200 || response.status >= 300) {
+        return { ok: false, status: response.status, data: null }
+      }
+      return { ok: true, status: response.status, data: response.data as MobileVersionInfo }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(msg)
+    }
+  } else {
+    // Desktop / Web: standard fetch with timeout
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+    try {
+      const response = await fetch(url, { signal: controller.signal })
+      clearTimeout(timeoutId)
+      if (!response.ok) {
+        return { ok: false, status: response.status, data: null }
+      }
+      return { ok: true, status: response.status, data: (await response.json()) as MobileVersionInfo }
+    } catch (err) {
+      clearTimeout(timeoutId)
+      throw err
+    }
   }
 }
 
@@ -58,12 +76,14 @@ export async function getMobileVersionInfo(): Promise<{
   // Try up to 3 times with exponential backoff
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS)
-      if (!response.ok) {
-        return { info: null, error: `Server returned ${response.status}` }
+      const result = await fetchVersionJson(url)
+      if (!result.ok) {
+        return { info: null, error: `Server returned ${result.status}` }
       }
-      const data = (await response.json()) as MobileVersionInfo
-      return { info: data }
+      if (!result.data) {
+        return { info: null, error: 'Invalid response from update server.' }
+      }
+      return { info: result.data }
     } catch (err) {
       const isAbort = err instanceof Error && err.name === 'AbortError'
       const msg = err instanceof Error ? err.message : String(err)

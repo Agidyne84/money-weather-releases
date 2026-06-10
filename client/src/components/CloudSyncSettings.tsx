@@ -39,9 +39,11 @@ const CloudSyncSettings: React.FC = () => {
   const [showPinInput, setShowPinInput] = useState(false)
   const [pendingAction, setPendingAction] = useState<'push' | 'pull' | 'sync' | null>(null)
   const [pendingPathSetup, setPendingPathSetup] = useState<string | null>(null)
-  const [showLocationPicker, setShowLocationPicker] = useState(false)
-  const [mobileFolderName, setMobileFolderName] = useState('MoneyWeather')
-  const [mobileFileName, setMobileFileName] = useState('cloud-backup.budgetbackup')
+  const [pendingPasswordSave, setPendingPasswordSave] = useState(false)
+  const [showFileBrowser, setShowFileBrowser] = useState(false)
+  const [fileBrowserPath, setFileBrowserPath] = useState('')
+  const [fileBrowserItems, setFileBrowserItems] = useState<Array<{ name: string; type: 'directory' | 'file' }>>([])
+  const [fileBrowserLoading, setFileBrowserLoading] = useState(false)
   const [fileStatus, setFileStatus] = useState<string>('')
 
   const loadSettings = useCallback(async () => {
@@ -142,23 +144,72 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Mobile: show location picker
-    setShowLocationPicker(true)
+    // Mobile: open file browser
+    setShowFileBrowser(true)
+    setFileBrowserPath('')
+    await loadFileBrowser('')
   }
 
-  const selectMobileLocation = async () => {
-    setShowLocationPicker(false)
-    const relativePath = `${mobileFolderName}/${mobileFileName}`
-
+  const loadFileBrowser = async (path: string) => {
+    setFileBrowserLoading(true)
     try {
-      await Filesystem.mkdir({
-        path: mobileFolderName,
+      const result = await Filesystem.readdir({
+        path,
         directory: Directory.Documents,
-        recursive: true,
-      }).catch(() => {})
-    } catch {}
+      })
+      const items: Array<{ name: string; type: 'directory' | 'file' }> = []
+      for (const entry of result.files) {
+        const entryName = typeof entry === 'string' ? entry : entry.name
+        try {
+          const stat = await Filesystem.stat({
+            path: path ? `${path}/${entryName}` : entryName,
+            directory: Directory.Documents,
+          })
+          items.push({ name: entryName, type: stat.type as 'directory' | 'file' })
+        } catch {
+          items.push({ name: entryName, type: 'file' })
+        }
+      }
+      // Sort: directories first, then files
+      items.sort((a, b) => {
+        if (a.type === b.type) return a.name.localeCompare(b.name)
+        return a.type === 'directory' ? -1 : 1
+      })
+      setFileBrowserItems(items)
+      setFileBrowserPath(path)
+    } catch (err) {
+      console.error('[FileBrowser] Failed to read directory:', err)
+      setMessage({ type: 'error', text: 'Could not read directory contents.' })
+    } finally {
+      setFileBrowserLoading(false)
+    }
+  }
 
-    await finalizePathSelection(relativePath)
+  const navigateFileBrowser = (folderName: string) => {
+    const nextPath = fileBrowserPath ? `${fileBrowserPath}/${folderName}` : folderName
+    loadFileBrowser(nextPath)
+  }
+
+  const goUpFileBrowser = () => {
+    if (!fileBrowserPath) return
+    const parts = fileBrowserPath.split('/')
+    parts.pop()
+    const parentPath = parts.join('/')
+    loadFileBrowser(parentPath)
+  }
+
+  const selectFileBrowserFolder = () => {
+    const relativePath = fileBrowserPath
+      ? `${fileBrowserPath}/cloud-backup.budgetbackup`
+      : 'cloud-backup.budgetbackup'
+    setShowFileBrowser(false)
+    finalizePathSelection(relativePath)
+  }
+
+  const selectFileBrowserFile = (fileName: string) => {
+    const relativePath = fileBrowserPath ? `${fileBrowserPath}/${fileName}` : fileName
+    setShowFileBrowser(false)
+    finalizePathSelection(relativePath)
   }
 
   const doSyncAction = async (action: 'push' | 'pull' | 'sync') => {
@@ -197,9 +248,22 @@ const CloudSyncSettings: React.FC = () => {
   }
 
   const handlePinSubmit = async () => {
-    if (!pinForPassword || !settings.filePath) return
+    if (!pinForPassword) return
     setLoading(true)
     try {
+      if (pendingPasswordSave) {
+        // Saving a new password — no need for unlock, just use PIN as encryption key
+        await completePasswordSave(pinForPassword)
+        setShowPinInput(false)
+        setPinForPassword('')
+        return
+      }
+
+      if (!settings.filePath) {
+        setMessage({ type: 'error', text: 'No backup path set.' })
+        return
+      }
+
       // Import the password unlock function dynamically to avoid circular deps
       const { unlockPassphrase } = await import('../services/securePassphrase')
       const ok = await unlockPassphrase(pinForPassword)
@@ -230,14 +294,17 @@ const CloudSyncSettings: React.FC = () => {
       setMessage({ type: 'error', text: 'Passwords do not match.' })
       return
     }
-    // Prompt for PIN to encrypt the password
-    const pin = prompt('Enter your app PIN to encrypt the password:')
-    if (!pin) return
+    // Show PIN modal to encrypt the password
+    setShowPasswordModal(false)
+    setPendingPasswordSave(true)
+    setShowPinInput(true)
+  }
+
+  const completePasswordSave = async (pin: string) => {
     setLoading(true)
     try {
       await storePassphrase(pin, password)
       setHasPassword(true)
-      setShowPasswordModal(false)
       setPassword('')
       setConfirmPassword('')
       setMessage({ type: 'success', text: 'Password saved securely.' })
@@ -252,6 +319,7 @@ const CloudSyncSettings: React.FC = () => {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
     } finally {
       setLoading(false)
+      setPendingPasswordSave(false)
     }
   }
 
@@ -372,53 +440,73 @@ const CloudSyncSettings: React.FC = () => {
         </>
       )}
 
-      {/* Mobile Location Picker */}
-      {showLocationPicker && (
+      {/* Mobile File Browser */}
+      {showFileBrowser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">Choose Backup Location</h3>
-            <p className="text-sm text-gray-600">
-              Set the folder and filename for your encrypted cloud backup on this device.
-            </p>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Folder</label>
-                <input
-                  type="text"
-                  value={mobileFolderName}
-                  onChange={e => setMobileFolderName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                  placeholder="Folder name"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">File Name</label>
-                <input
-                  type="text"
-                  value={mobileFileName}
-                  onChange={e => setMobileFileName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                  placeholder="File name"
-                />
-              </div>
-              <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
-                Path: Documents/{mobileFolderName}/{mobileFileName}
-              </div>
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-3 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Choose Backup Location</h3>
+              {fileBrowserPath && (
+                <button
+                  onClick={goUpFileBrowser}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Back
+                </button>
+              )}
             </div>
-            <div className="flex gap-2">
+            <p className="text-xs text-gray-500">
+              Documents/{fileBrowserPath || ''}
+            </p>
+            <div className="flex-1 overflow-y-auto border border-gray-200 rounded-md min-h-[120px]">
+              {fileBrowserLoading ? (
+                <div className="p-4 text-center text-sm text-gray-500">Loading...</div>
+              ) : fileBrowserItems.length === 0 ? (
+                <div className="p-4 text-center text-sm text-gray-500">Empty folder</div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {fileBrowserItems.map((item) => (
+                    <button
+                      key={item.name}
+                      onClick={() =>
+                        item.type === 'directory'
+                          ? navigateFileBrowser(item.name)
+                          : item.name.endsWith('.budgetbackup')
+                            ? selectFileBrowserFile(item.name)
+                            : undefined
+                      }
+                      className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 ${
+                        item.type === 'directory'
+                          ? 'text-blue-700'
+                          : item.name.endsWith('.budgetbackup')
+                            ? 'text-green-700'
+                            : 'text-gray-400 cursor-default'
+                      }`}
+                    >
+                      <span>{item.type === 'directory' ? '📁' : item.name.endsWith('.budgetbackup') ? '🔐' : '📄'}</span>
+                      <span className="truncate">{item.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 pt-2">
               <button
-                onClick={selectMobileLocation}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+                onClick={selectFileBrowserFolder}
+                className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
               >
-                Save
+                Use This Folder
               </button>
               <button
-                onClick={() => setShowLocationPicker(false)}
+                onClick={() => setShowFileBrowser(false)}
                 className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
               >
                 Cancel
               </button>
             </div>
+            <p className="text-xs text-gray-400 text-center">
+              Tap a folder to open it, or tap a .budgetbackup file to select it.
+            </p>
           </div>
         </div>
       )}
@@ -433,27 +521,6 @@ const CloudSyncSettings: React.FC = () => {
             <p className="text-sm text-gray-600">
               This password encrypts your cloud backup files. Use the same password on all devices.
             </p>
-            {hasPassword && (
-              <div className="space-y-1">
-                <label className="block text-xs font-medium text-gray-700">Current Password</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={sessionPassword ? '••••••••' : 'Not unlocked'}
-                    readOnly
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-gray-50"
-                  />
-                  {sessionPassword && (
-                    <button
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-blue-600"
-                    >
-                      {showPassword ? 'Hide' : 'Show'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
             <div className="space-y-1">
               <label className="block text-xs font-medium text-gray-700">New Password</label>
               <div className="relative">
@@ -521,8 +588,14 @@ const CloudSyncSettings: React.FC = () => {
       {showPinInput && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4">
-            <h4 className="text-sm font-semibold text-gray-900">Unlock Password</h4>
-            <p className="text-xs text-gray-500">Enter your app PIN to decrypt the cloud sync password.</p>
+            <h4 className="text-sm font-semibold text-gray-900">
+              {pendingPasswordSave ? 'Confirm with PIN' : 'Unlock Password'}
+            </h4>
+            <p className="text-xs text-gray-500">
+              {pendingPasswordSave
+                ? 'Enter your app PIN to encrypt and save the new cloud sync password.'
+                : 'Enter your app PIN to decrypt the cloud sync password.'}
+            </p>
             <input
               type="password"
               placeholder="Enter PIN"
@@ -537,10 +610,10 @@ const CloudSyncSettings: React.FC = () => {
                 disabled={loading || !pinForPassword}
                 className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
               >
-                {loading ? 'Unlocking...' : 'Unlock'}
+                {loading ? 'Processing...' : (pendingPasswordSave ? 'Save Password' : 'Unlock')}
               </button>
               <button
-                onClick={() => { setShowPinInput(false); setPinForPassword(''); setPendingAction(null) }}
+                onClick={() => { setShowPinInput(false); setPinForPassword(''); setPendingAction(null); setPendingPasswordSave(false) }}
                 className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
               >
                 Cancel

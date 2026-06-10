@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.12",
-    "versionCode":  10112,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.12/app-release.apk",
+    "version":  "1.1.13",
+    "versionCode":  10113,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.13/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Mobile OTA: removed cache option causing fetch failures, added timeout + retry. Desktop: silent auto-updates, remembers install mode."
+    "releaseNotes":  "Cloud Sync: file browser for mobile backup path, password save uses PIN modal, removed current password field. OTA: CapacitorHttp for native fetch."
 }
