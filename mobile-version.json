@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.11",
-    "versionCode":  10111,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.11/app-release.apk",
+    "version":  "1.1.12",
+    "versionCode":  10112,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.12/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Mobile OTA update fix: cache-buster for version check, clear feedback for up-to-date / error / available states"
+    "releaseNotes":  "Mobile OTA: removed cache option causing fetch failures, added timeout + retry. Desktop: silent auto-updates, remembers install mode."
 }

@@ -25,6 +25,7 @@ const VERSION_URL =
   'https://raw.githubusercontent.com/Agidyne84/money-weather-releases/main/mobile-version.json'
 
 const SKIP_VERSION_KEY = 'ota_skip_version'
+const FETCH_TIMEOUT_MS = 15000
 
 export interface MobileVersionInfo {
   version: string
@@ -34,23 +35,53 @@ export interface MobileVersionInfo {
   releaseNotes: string
 }
 
+async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, { signal: controller.signal })
+    clearTimeout(timeoutId)
+    return response
+  } catch (err) {
+    clearTimeout(timeoutId)
+    throw err
+  }
+}
+
 export async function getMobileVersionInfo(): Promise<{
   info: MobileVersionInfo | null
   error?: string
 }> {
-  try {
-    // Cache-buster to bypass GitHub raw CDN caching
-    const url = `${VERSION_URL}?t=${Date.now()}`
-    const response = await fetch(url, { cache: 'no-cache' })
-    if (!response.ok) {
-      return { info: null, error: `Server returned ${response.status}` }
+  // Cache-buster to bypass GitHub raw CDN caching
+  const url = `${VERSION_URL}?t=${Date.now()}`
+
+  // Try up to 3 times with exponential backoff
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS)
+      if (!response.ok) {
+        return { info: null, error: `Server returned ${response.status}` }
+      }
+      const data = (await response.json()) as MobileVersionInfo
+      return { info: data }
+    } catch (err) {
+      const isAbort = err instanceof Error && err.name === 'AbortError'
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[OTA] Fetch attempt ${attempt} failed:`, msg)
+
+      if (attempt === 3) {
+        if (isAbort) {
+          return { info: null, error: 'Request timed out. Please check your internet connection.' }
+        }
+        return { info: null, error: 'Unable to reach update server. Please check your internet connection.' }
+      }
+
+      // Exponential backoff before retry
+      await new Promise((r) => setTimeout(r, attempt * 1000))
     }
-    return { info: (await response.json()) as MobileVersionInfo }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[OTA] Failed to fetch version info:', msg)
-    return { info: null, error: msg }
   }
+
+  return { info: null, error: 'Unknown error checking for updates.' }
 }
 
 export async function getCurrentAppVersion(): Promise<{ version: string; build: string }> {

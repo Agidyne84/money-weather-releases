@@ -458,15 +458,17 @@ autoUpdater.on('update-downloaded', (info) => {
     defaultId: 0,
   }).then(({ response }) => {
     if (response === 0) {
-      // Restart Now — install and restart immediately
-      autoUpdater.quitAndInstall();
+      // Restart Now — install silently and restart immediately
+      // isSilent=true runs NSIS with /S flag (no UI prompts)
+      // isForceRunAfter=true ensures app restarts after install
+      autoUpdater.quitAndInstall(true, true);
     } else {
-      // "Install on Next Launch" — flag so we call quitAndInstall on next quit (shows NSIS progress)
+      // "Install on Next Launch" — flag so we call quitAndInstall on next quit (silent)
       pendingInstallOnQuit = true;
       dialog.showMessageBox(mainWindow, {
         type: 'warning',
         title: 'Update Ready',
-        message: 'The update will install when you close the app.',
+        message: 'The update will install silently when you close the app.',
         detail: 'Please wait for the installer to finish before reopening.',
         buttons: ['OK'],
       }).catch(() => {});
@@ -503,8 +505,8 @@ app.on('activate', () => {
 app.on('before-quit', () => {
   if (pendingInstallOnQuit) {
     pendingInstallOnQuit = false;
-    console.log('[Updater] Running installer with UI on quit');
-    autoUpdater.quitAndInstall();
+    console.log('[Updater] Running silent installer on quit');
+    autoUpdater.quitAndInstall(true, true);
     return;
   }
   stopServer();
