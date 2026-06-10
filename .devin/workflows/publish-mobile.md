@@ -45,12 +45,17 @@ Run the PowerShell script from the project root:
 $env:GH_TOKEN = "ghp_xxxxxxxx"
 
 # Build APK and upload to the release created by desktop publish
+# IMPORTANT: This runs 'npx cap sync' then 'gradlew assembleRelease'.
+# Skipping cap sync means the APK will contain OLD web assets.
 .\publish-mobile.ps1 -Version "X.Y.Z" -Build
+```
 
-# Or, if APK is already built:
-.\publish-mobile.ps1 -Version "X.Y.Z" -SkipBuild
+> **CRITICAL — `npx cap sync`**: If the React web code changed (e.g. new components, bug fixes), you **must** run `npx cap sync` before building the APK. This copies `client/dist/` into the Android project's assets. Without it, the APK will have stale web code even though the native version number is correct. This is the #1 cause of "the update is installed but the UI didn't change."
 
-# Or, to overwrite an existing APK on the release:
+> **`-SkipBuild` is dangerous**: Only use it if you already built the APK **with `npx cap sync`** in the same session. If you built manually without `cap sync`, the APK has stale web assets — do NOT use `-SkipBuild`.
+
+```powershell
+# Overwrite an existing APK asset (use only after a fresh -Build):
 .\publish-mobile.ps1 -Version "X.Y.Z" -SkipBuild -Force
 ```
 
@@ -68,9 +73,14 @@ The script will:
 
 ### Build release APK
 ```bash
+# Must run in this order. Skipping cap sync = stale web assets in the APK.
 cd client
-npx cap sync
-cd android
+npm run build          # Build the React web app
+cd ..                  # Return to repo root
+cd electron            # Or wherever you run npm run build
+cd ..                  #
+npx cap sync           # Copy dist/ into Android assets
+cd client/android
 .\gradlew.bat assembleRelease
 ```
 Output: `client/android/app/build/outputs/apk/release/app-release.apk`

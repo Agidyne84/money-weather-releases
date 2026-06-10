@@ -98,6 +98,31 @@ function Test-ApkExists {
     }
 }
 
+function Test-WebAssetsStale {
+    param([string]$ApkPath)
+    $assetsDir = Join-Path (Split-Path $ApkPath -Parent) '..\..\..\src\main\assets\public'
+    $assetsDir = Resolve-Path $assetsDir -ErrorAction SilentlyContinue
+    if (-not $assetsDir) {
+        Write-Warning "Could not locate web assets folder. Cannot verify freshness."
+        return
+    }
+
+    $indexHtml = Join-Path $assetsDir 'index.html'
+    if (-not (Test-Path $indexHtml)) {
+        Write-Warning "Web assets appear missing ($indexHtml not found). Run with -Build."
+        return
+    }
+
+    $assetTime = (Get-Item $indexHtml).LastWriteTime
+    $srcFiles = Get-ChildItem 'client\src' -Recurse -File -Include *.tsx,*.ts,*.css | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($srcFiles -and $srcFiles.LastWriteTime -gt $assetTime) {
+        Write-Warning "Web assets in Android project are OLDER than source code changes!"
+        Write-Warning "  Source modified: $($srcFiles.LastWriteTime)  -> $($srcFiles.FullName)"
+        Write-Warning "  Assets modified: $assetTime  -> $indexHtml"
+        Write-Warning "  Run with -Build (includes 'npx cap sync') instead of -SkipBuild."
+    }
+}
+
 # ── Validate token ───────────────────────────────────────────────────────────
 if ([string]::IsNullOrWhiteSpace($Token)) {
     Write-Error "GitHub token is required.`nSet `$env:GH_TOKEN or pass -Token."
@@ -145,11 +170,13 @@ if ($Build) {
 elseif (-not $SkipBuild) {
     Write-Host "Checking for existing APK..." -ForegroundColor Cyan
     Test-ApkExists $ApkPath
+    Test-WebAssetsStale $ApkPath
     $apkSize = [math]::Round((Get-Item $ApkPath).Length / 1MB, 2)
     Write-Host "Found APK: $ApkPath ($apkSize MB)" -ForegroundColor Green
 }
 else {
     Test-ApkExists $ApkPath
+    Test-WebAssetsStale $ApkPath
     Write-Host "Using existing APK: $ApkPath" -ForegroundColor Green
 }
 
