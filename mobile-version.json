@@ -1,8 +1,7 @@
 ﻿{
-    "version":  "1.1.7",
-    "versionCode":  10107,
+    "version":  "1.1.8",
+    "versionCode":  10108,
     "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.8/app-release.apk",
     "force":  false,
     "releaseNotes":  "New app icon and bug fixes"
 }
-
