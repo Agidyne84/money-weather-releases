@@ -123,7 +123,7 @@ async function decrypt(fileBuffer: Uint8Array, passphrase: string): Promise<Uint
     )
     return new Uint8Array(decrypted)
   } catch {
-    throw new Error('Decryption failed: wrong passphrase or corrupted file')
+    throw new Error('Decryption failed: wrong password or corrupted file')
   }
 }
 
@@ -198,7 +198,7 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
   // Determine if encrypted
   if (arrayEquals(fileBytes.subarray(0, 4), MAGIC)) {
     if (!passphrase) {
-      throw new Error('This backup file is encrypted. Please provide a passphrase.')
+      throw new Error('This backup file is encrypted. Please provide a password.')
     }
     jsonBytes = await decrypt(fileBytes, passphrase)
   } else {

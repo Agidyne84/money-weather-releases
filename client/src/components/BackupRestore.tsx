@@ -24,26 +24,26 @@ const EyeIcon = ({ open }: { open: boolean }) => (
 )
 
 const BackupRestore: React.FC = () => {
-  const [exportPassphrase, setExportPassphrase] = useState('')
-  const [importPassphrase, setImportPassphrase] = useState('')
+  const [exportPassword, setExportPassword] = useState('')
+  const [importPassword, setImportPassword] = useState('')
   const [importFile, setImportFile] = useState<File | null>(null)
   const [exporting, setExporting] = useState(false)
   const [importing, setImporting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [showConfirm, setShowConfirm] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
-  const [showExportPassphrase, setShowExportPassphrase] = useState(false)
-  const [showImportPassphrase, setShowImportPassphrase] = useState(false)
+  const [showExportPassword, setShowExportPassword] = useState(false)
+  const [showImportPassword, setShowImportPassword] = useState(false)
   const [resetting, setResetting] = useState(false)
 
   const handleExport = async (encrypted: boolean) => {
     setExporting(true)
     setMessage(null)
     try {
-      const passphrase = encrypted ? exportPassphrase : undefined
+      const password = encrypted ? exportPassword : undefined
 
-      if (encrypted && !exportPassphrase.trim()) {
-        setMessage({ type: 'error', text: 'Please enter a passphrase for encrypted export.' })
+      if (encrypted && !exportPassword.trim()) {
+        setMessage({ type: 'error', text: 'Please enter a password for encrypted export.' })
         setExporting(false)
         return
       }
@@ -51,7 +51,7 @@ const BackupRestore: React.FC = () => {
       if (isNative) {
         // Mobile: generate backup client-side and share via native share sheet
         const { exportMobileBackup, shareMobileBackup } = await import('../utils/mobileBackup')
-        const data = await exportMobileBackup(passphrase)
+        const data = await exportMobileBackup(password)
         const filename = encrypted ? 'budget-backup.budgetbackup' : 'budget-backup.json'
         await shareMobileBackup(data, filename)
         setMessage({ type: 'success', text: `Backup exported successfully${encrypted ? ' (encrypted)' : ' (unencrypted)'}` })
@@ -59,7 +59,7 @@ const BackupRestore: React.FC = () => {
         // Desktop: use server API
         const response = await axios.post(
           `${API_BASE_URL}/backup/export`,
-          { passphrase },
+          { passphrase: password },
           { responseType: 'blob' }
         )
 
@@ -76,7 +76,7 @@ const BackupRestore: React.FC = () => {
 
         setMessage({ type: 'success', text: `Backup exported successfully${encrypted ? ' (encrypted)' : ' (unencrypted)'}` })
       }
-      setExportPassphrase('')
+      setExportPassword('')
     } catch (error: any) {
       setMessage({ type: 'error', text: error?.response?.data?.error || error?.message || 'Export failed' })
     } finally {
@@ -100,8 +100,8 @@ const BackupRestore: React.FC = () => {
       if (isNative) {
         // Mobile: restore using client-side SQLite
         const { importMobileBackup } = await import('../utils/mobileBackup')
-        const passphrase = importPassphrase.trim() || undefined
-        const result = await importMobileBackup(fileBuffer, passphrase)
+        const password = importPassword.trim() || undefined
+        const result = await importMobileBackup(fileBuffer, password)
         const counts = Object.entries(result.summary)
           .map(([table, count]) => `${table.replace(/_/g, ' ')}: ${count}`)
           .join(', ')
@@ -111,8 +111,8 @@ const BackupRestore: React.FC = () => {
         const headers: Record<string, string> = {
           'Content-Type': 'application/octet-stream',
         }
-        if (importPassphrase.trim()) {
-          headers['X-Backup-Passphrase'] = importPassphrase
+        if (importPassword.trim()) {
+          headers['X-Backup-Passphrase'] = importPassword
         }
 
         const response = await axios.post(
@@ -130,7 +130,7 @@ const BackupRestore: React.FC = () => {
       }
 
       setImportFile(null)
-      setImportPassphrase('')
+      setImportPassword('')
 
       // Reload after a short delay so user sees the success message
       setTimeout(() => window.location.reload(), 2000)
@@ -186,34 +186,34 @@ const BackupRestore: React.FC = () => {
         <div className="space-y-3">
           <div>
             <label className="block text-sm text-gray-600 mb-1">
-              Passphrase <span className="text-gray-400">(for encrypted export)</span>
+              Password <span className="text-gray-400">(for encrypted export)</span>
             </label>
             <div className="relative w-full max-w-sm">
               <input
-                type={showExportPassphrase ? 'text' : 'password'}
+                type={showExportPassword ? 'text' : 'password'}
                 className="input w-full pr-10"
-                placeholder="Enter a strong passphrase..."
-                value={exportPassphrase}
-                onChange={(e) => setExportPassphrase(e.target.value)}
+                placeholder="Enter a strong password..."
+                value={exportPassword}
+                onChange={(e) => setExportPassword(e.target.value)}
                 autoComplete="off"
               />
               <button
                 type="button"
-                onClick={() => setShowExportPassphrase(v => !v)}
+                onClick={() => setShowExportPassword(v => !v)}
                 className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600"
-                title={showExportPassphrase ? 'Hide passphrase' : 'Show passphrase'}
+                title={showExportPassword ? 'Hide password' : 'Show password'}
               >
-                <EyeIcon open={showExportPassphrase} />
+                <EyeIcon open={showExportPassword} />
               </button>
             </div>
             <p className="text-xs text-gray-400 mt-1">
-              You will need this passphrase to restore the backup. It is never stored.
+              You will need this password to restore the backup. It is never stored.
             </p>
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => handleExport(true)}
-              disabled={exporting || !exportPassphrase.trim()}
+              disabled={exporting || !exportPassword.trim()}
               className="btn-primary text-sm disabled:opacity-50"
             >
               {exporting ? 'Exporting...' : 'Export Encrypted Backup'}
@@ -267,24 +267,24 @@ const BackupRestore: React.FC = () => {
           {importFile && importFile.name.endsWith('.budgetbackup') && (
             <div>
               <label className="block text-sm text-gray-600 mb-1">
-                Passphrase <span className="text-gray-400">(used during export)</span>
+                Password <span className="text-gray-400">(used during export)</span>
               </label>
               <div className="relative w-full max-w-sm">
                 <input
-                  type={showImportPassphrase ? 'text' : 'password'}
+                  type={showImportPassword ? 'text' : 'password'}
                   className="input w-full pr-10"
-                  placeholder="Enter the passphrase used to export..."
-                  value={importPassphrase}
-                  onChange={(e) => setImportPassphrase(e.target.value)}
+                  placeholder="Enter the password used to export..."
+                  value={importPassword}
+                  onChange={(e) => setImportPassword(e.target.value)}
                   autoComplete="off"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowImportPassphrase(v => !v)}
+                  onClick={() => setShowImportPassword(v => !v)}
                   className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600"
-                  title={showImportPassphrase ? 'Hide passphrase' : 'Show passphrase'}
+                  title={showImportPassword ? 'Hide password' : 'Show password'}
                 >
-                  <EyeIcon open={showImportPassphrase} />
+                  <EyeIcon open={showImportPassword} />
                 </button>
               </div>
             </div>

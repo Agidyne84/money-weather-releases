@@ -99,7 +99,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   await performSync(syncSettings.filePath)
                   window.alert('Cloud sync completed successfully.')
                 } else {
-                  window.alert('Please enter your PIN to unlock the cloud sync passphrase in Setup > Cloud Sync.')
+                  window.alert('Please enter your PIN to unlock the cloud sync password in Setup > Cloud Sync.')
                 }
               }
             }
