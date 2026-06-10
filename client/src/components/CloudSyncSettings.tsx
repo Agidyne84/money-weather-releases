@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import {
@@ -14,8 +14,8 @@ import {
   hasStoredPassphrase,
   storePassphrase,
   deleteStoredPassphrase,
-  getSessionPassphrase,
 } from '../services/securePassphrase'
+import AppLock from './AppLock'
 
 const isNative = Capacitor.isNativePlatform()
 
@@ -29,21 +29,15 @@ const CloudSyncSettings: React.FC = () => {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [hasPassword, setHasPassword] = useState(false)
-  const [sessionPassword, setSessionPassword] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [pinForPassword, setPinForPassword] = useState('')
-  const [showPinInput, setShowPinInput] = useState(false)
-  const [pendingAction, setPendingAction] = useState<'push' | 'pull' | 'sync' | null>(null)
   const [pendingPathSetup, setPendingPathSetup] = useState<string | null>(null)
   const [pendingPasswordSave, setPendingPasswordSave] = useState(false)
-  const [showFileBrowser, setShowFileBrowser] = useState(false)
-  const [fileBrowserPath, setFileBrowserPath] = useState('')
-  const [fileBrowserItems, setFileBrowserItems] = useState<Array<{ name: string; type: 'directory' | 'file' }>>([])
-  const [fileBrowserLoading, setFileBrowserLoading] = useState(false)
+  const [showAppLock, setShowAppLock] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [fileStatus, setFileStatus] = useState<string>('')
 
   const loadSettings = useCallback(async () => {
@@ -51,9 +45,6 @@ const CloudSyncSettings: React.FC = () => {
     setSettings(s)
     const hp = await hasStoredPassphrase()
     setHasPassword(hp)
-    const sp = getSessionPassphrase()
-    setSessionPassword(sp)
-
     if (s.enabled && s.filePath) {
       const status = await checkCloudSyncStatus(s.filePath)
       const statusMap: Record<string, string> = {
@@ -110,14 +101,6 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // If passphrase exists but not in session, just save path and let user unlock later
-    const sp = getSessionPassphrase()
-    if (!sp) {
-      setMessage({ type: 'success', text: 'Backup path set. Unlock password to create the initial backup.' })
-      loadSettings()
-      return
-    }
-
     // Create initial encrypted backup
     await createInitialBackup(filePath)
   }
@@ -144,84 +127,44 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Mobile: open file browser
-    setShowFileBrowser(true)
-    setFileBrowserPath('')
-    await loadFileBrowser('')
+    // Mobile: trigger native file picker via hidden input
+    fileInputRef.current?.click()
   }
 
-  const loadFileBrowser = async (path: string) => {
-    setFileBrowserLoading(true)
-    try {
-      const result = await Filesystem.readdir({
-        path,
-        directory: Directory.Documents,
-      })
-      const items: Array<{ name: string; type: 'directory' | 'file' }> = []
-      for (const entry of result.files) {
-        const entryName = typeof entry === 'string' ? entry : entry.name
-        try {
-          const stat = await Filesystem.stat({
-            path: path ? `${path}/${entryName}` : entryName,
-            directory: Directory.Documents,
-          })
-          items.push({ name: entryName, type: stat.type as 'directory' | 'file' })
-        } catch {
-          items.push({ name: entryName, type: 'file' })
-        }
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    // Reset input so same file can be selected again
+    e.target.value = ''
+
+    if (isNative) {
+      // On mobile: copy selected file to Documents so we have a persistent path
+      const filename = file.name.endsWith('.budgetbackup')
+        ? file.name
+        : 'cloud-backup.budgetbackup'
+      try {
+        const arrayBuffer = await file.arrayBuffer()
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
+        await Filesystem.writeFile({
+          path: filename,
+          directory: Directory.Documents,
+          data: base64,
+          encoding: 'base64' as any,
+        })
+        await finalizePathSelection(filename)
+      } catch (err) {
+        console.error('[CloudSync] Failed to write selected file:', err)
+        setMessage({ type: 'error', text: 'Could not save the selected file.' })
       }
-      // Sort: directories first, then files
-      items.sort((a, b) => {
-        if (a.type === b.type) return a.name.localeCompare(b.name)
-        return a.type === 'directory' ? -1 : 1
-      })
-      setFileBrowserItems(items)
-      setFileBrowserPath(path)
-    } catch (err) {
-      console.error('[FileBrowser] Failed to read directory:', err)
-      setMessage({ type: 'error', text: 'Could not read directory contents.' })
-    } finally {
-      setFileBrowserLoading(false)
+    } else {
+      // Desktop: not reachable here since desktop uses Electron API above
+      await finalizePathSelection(file.name)
     }
-  }
-
-  const navigateFileBrowser = (folderName: string) => {
-    const nextPath = fileBrowserPath ? `${fileBrowserPath}/${folderName}` : folderName
-    loadFileBrowser(nextPath)
-  }
-
-  const goUpFileBrowser = () => {
-    if (!fileBrowserPath) return
-    const parts = fileBrowserPath.split('/')
-    parts.pop()
-    const parentPath = parts.join('/')
-    loadFileBrowser(parentPath)
-  }
-
-  const selectFileBrowserFolder = () => {
-    const relativePath = fileBrowserPath
-      ? `${fileBrowserPath}/cloud-backup.budgetbackup`
-      : 'cloud-backup.budgetbackup'
-    setShowFileBrowser(false)
-    finalizePathSelection(relativePath)
-  }
-
-  const selectFileBrowserFile = (fileName: string) => {
-    const relativePath = fileBrowserPath ? `${fileBrowserPath}/${fileName}` : fileName
-    setShowFileBrowser(false)
-    finalizePathSelection(relativePath)
   }
 
   const doSyncAction = async (action: 'push' | 'pull' | 'sync') => {
     if (!settings.filePath) {
       setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
-      return
-    }
-
-    const pw = getSessionPassphrase()
-    if (!pw) {
-      setPendingAction(action)
-      setShowPinInput(true)
       return
     }
 
@@ -247,44 +190,6 @@ const CloudSyncSettings: React.FC = () => {
     }
   }
 
-  const handlePinSubmit = async () => {
-    if (!pinForPassword) return
-    setLoading(true)
-    try {
-      if (pendingPasswordSave) {
-        // Saving a new password — no need for unlock, just use PIN as encryption key
-        await completePasswordSave(pinForPassword)
-        setShowPinInput(false)
-        setPinForPassword('')
-        return
-      }
-
-      if (!settings.filePath) {
-        setMessage({ type: 'error', text: 'No backup path set.' })
-        return
-      }
-
-      // Import the password unlock function dynamically to avoid circular deps
-      const { unlockPassphrase } = await import('../services/securePassphrase')
-      const ok = await unlockPassphrase(pinForPassword)
-      if (ok) {
-        setShowPinInput(false)
-        setPinForPassword('')
-        setSessionPassword(getSessionPassphrase())
-        if (pendingAction) {
-          await doSyncAction(pendingAction)
-          setPendingAction(null)
-        }
-      } else {
-        setMessage({ type: 'error', text: 'Incorrect PIN. Could not unlock password.' })
-      }
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const handleSavePassword = async () => {
     if (password.length < 8) {
       setMessage({ type: 'error', text: 'Password must be at least 8 characters.' })
@@ -294,13 +199,20 @@ const CloudSyncSettings: React.FC = () => {
       setMessage({ type: 'error', text: 'Passwords do not match.' })
       return
     }
-    // Show PIN modal to encrypt the password
+    // Show full-screen AppLock to verify PIN before encrypting password
     setShowPasswordModal(false)
     setPendingPasswordSave(true)
-    setShowPinInput(true)
+    setShowAppLock(true)
   }
 
-  const completePasswordSave = async (pin: string) => {
+  const handleAppLockUnlock = () => {
+    // AppLock unlocked — if this was for password save, it already
+    // called onUnlockWithPin which handled the save.
+    setShowAppLock(false)
+  }
+
+  const handleAppLockUnlockWithPin = async (pin: string) => {
+    if (!pendingPasswordSave) return
     setLoading(true)
     try {
       await storePassphrase(pin, password)
@@ -308,9 +220,7 @@ const CloudSyncSettings: React.FC = () => {
       setPassword('')
       setConfirmPassword('')
       setMessage({ type: 'success', text: 'Password saved securely.' })
-      setSessionPassword(getSessionPassphrase())
 
-      // If this was triggered during path setup, create the initial backup
       if (pendingPathSetup) {
         await createInitialBackup(pendingPathSetup)
         setPendingPathSetup(null)
@@ -327,7 +237,6 @@ const CloudSyncSettings: React.FC = () => {
     if (!confirm('Are you sure you want to remove the saved password?')) return
     await deleteStoredPassphrase()
     setHasPassword(false)
-    setSessionPassword(null)
     setMessage({ type: 'success', text: 'Password removed.' })
   }
 
@@ -384,9 +293,7 @@ const CloudSyncSettings: React.FC = () => {
               <div>
                 <p className="text-sm font-medium text-gray-700">Encryption Password</p>
                 <p className="text-xs text-gray-500">
-                  {hasPassword
-                    ? (sessionPassword ? 'Unlocked for this session' : 'Locked — enter PIN to unlock')
-                    : 'Not set'}
+                  {hasPassword ? 'Saved' : 'Not set'}
                 </p>
               </div>
               <button
@@ -396,17 +303,9 @@ const CloudSyncSettings: React.FC = () => {
                 {hasPassword ? 'Edit Password' : 'Create Password'}
               </button>
             </div>
-            {hasPassword && !sessionPassword && (
-              <button
-                onClick={() => { setPendingAction(null); setShowPinInput(true) }}
-                className="w-full px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
-              >
-                Unlock
-              </button>
-            )}
           </div>
 
-          {settings.filePath && sessionPassword && (
+          {settings.filePath && (
             <div className="flex gap-2">
               <button
                 onClick={() => doSyncAction('sync')}
@@ -431,84 +330,18 @@ const CloudSyncSettings: React.FC = () => {
               </button>
             </div>
           )}
-
-          {settings.filePath && !sessionPassword && hasPassword && (
-            <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
-              Password is encrypted. Click <strong>Unlock</strong> and enter your PIN to enable sync operations.
-            </p>
-          )}
         </>
       )}
 
-      {/* Mobile File Browser */}
-      {showFileBrowser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-3 max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Choose Backup Location</h3>
-              {fileBrowserPath && (
-                <button
-                  onClick={goUpFileBrowser}
-                  className="text-xs text-blue-600 hover:underline"
-                >
-                  Back
-                </button>
-              )}
-            </div>
-            <p className="text-xs text-gray-500">
-              Documents/{fileBrowserPath || ''}
-            </p>
-            <div className="flex-1 overflow-y-auto border border-gray-200 rounded-md min-h-[120px]">
-              {fileBrowserLoading ? (
-                <div className="p-4 text-center text-sm text-gray-500">Loading...</div>
-              ) : fileBrowserItems.length === 0 ? (
-                <div className="p-4 text-center text-sm text-gray-500">Empty folder</div>
-              ) : (
-                <div className="divide-y divide-gray-100">
-                  {fileBrowserItems.map((item) => (
-                    <button
-                      key={item.name}
-                      onClick={() =>
-                        item.type === 'directory'
-                          ? navigateFileBrowser(item.name)
-                          : item.name.endsWith('.budgetbackup')
-                            ? selectFileBrowserFile(item.name)
-                            : undefined
-                      }
-                      className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 ${
-                        item.type === 'directory'
-                          ? 'text-blue-700'
-                          : item.name.endsWith('.budgetbackup')
-                            ? 'text-green-700'
-                            : 'text-gray-400 cursor-default'
-                      }`}
-                    >
-                      <span>{item.type === 'directory' ? '📁' : item.name.endsWith('.budgetbackup') ? '🔐' : '📄'}</span>
-                      <span className="truncate">{item.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="flex gap-2 pt-2">
-              <button
-                onClick={selectFileBrowserFolder}
-                className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
-              >
-                Use This Folder
-              </button>
-              <button
-                onClick={() => setShowFileBrowser(false)}
-                className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
-              >
-                Cancel
-              </button>
-            </div>
-            <p className="text-xs text-gray-400 text-center">
-              Tap a folder to open it, or tap a .budgetbackup file to select it.
-            </p>
-          </div>
-        </div>
+      {/* Hidden native file input for mobile */}
+      {isNative && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".budgetbackup,.json"
+          className="hidden"
+          onChange={handleFileSelected}
+        />
       )}
 
       {/* Password Modal */}
@@ -584,43 +417,12 @@ const CloudSyncSettings: React.FC = () => {
         </div>
       )}
 
-      {/* PIN Unlock Modal */}
-      {showPinInput && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4">
-            <h4 className="text-sm font-semibold text-gray-900">
-              {pendingPasswordSave ? 'Confirm with PIN' : 'Unlock Password'}
-            </h4>
-            <p className="text-xs text-gray-500">
-              {pendingPasswordSave
-                ? 'Enter your app PIN to encrypt and save the new cloud sync password.'
-                : 'Enter your app PIN to decrypt the cloud sync password.'}
-            </p>
-            <input
-              type="password"
-              placeholder="Enter PIN"
-              value={pinForPassword}
-              onChange={e => setPinForPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-              maxLength={6}
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={handlePinSubmit}
-                disabled={loading || !pinForPassword}
-                className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
-              >
-                {loading ? 'Processing...' : (pendingPasswordSave ? 'Save Password' : 'Unlock')}
-              </button>
-              <button
-                onClick={() => { setShowPinInput(false); setPinForPassword(''); setPendingAction(null); setPendingPasswordSave(false) }}
-                className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Full-screen AppLock for password save */}
+      {showAppLock && (
+        <AppLock
+          onUnlock={handleAppLockUnlock}
+          onUnlockWithPin={handleAppLockUnlockWithPin}
+        />
       )}
 
       {message && (

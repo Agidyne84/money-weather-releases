@@ -3,9 +3,10 @@ import { verifyPassword, isBiometricEnabled, isBiometricAvailable, authenticateW
 
 interface AppLockProps {
   onUnlock: () => void
+  onUnlockWithPin?: (pin: string) => void
 }
 
-const AppLock: React.FC<AppLockProps> = ({ onUnlock }) => {
+const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin }) => {
   const [pin, setPin] = useState('')
   const [error, setError] = useState(false)
   const [biometricReady, setBiometricReady] = useState(false)
@@ -47,6 +48,7 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock }) => {
       verifyPassword(nextPin).then((ok) => {
         if (ok) {
           setPin('')
+          onUnlockWithPin?.(nextPin)
           onUnlock()
         } else if (nextPin.length >= 6) {
           setError(true)
@@ -54,7 +56,7 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock }) => {
         }
       })
     }
-  }, [pin, onUnlock])
+  }, [pin, onUnlock, onUnlockWithPin])
 
   const handleBackspace = useCallback(() => {
     setError(false)
@@ -71,13 +73,14 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock }) => {
     verifyPassword(pin).then((ok) => {
       if (ok) {
         setPin('')
+        onUnlockWithPin?.(pin)
         onUnlock()
       } else {
         setError(true)
         setPin('')
       }
     })
-  }, [pin, onUnlock])
+  }, [pin, onUnlock, onUnlockWithPin])
 
   return (
     <div className="fixed inset-0 z-[100] bg-white flex flex-col items-center justify-center px-6">

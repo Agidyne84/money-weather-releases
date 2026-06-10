@@ -39,13 +39,24 @@ async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: num
   if (Capacitor.isNativePlatform()) {
     // Use CapacitorHttp for native requests — bypasses WebView CORS/fetch issues
     try {
-      const response = await CapacitorHttp.get({ url, readTimeout: FETCH_TIMEOUT_MS, connectTimeout: 10000 })
+      console.log('[OTA] CapacitorHttp.get:', url)
+      const response = await CapacitorHttp.get({ url })
+      console.log('[OTA] CapacitorHttp response status:', response.status)
       if (response.status < 200 || response.status >= 300) {
         return { ok: false, status: response.status, data: null }
       }
-      return { ok: true, status: response.status, data: response.data as MobileVersionInfo }
+      // Response.data may already be parsed or may be a string
+      let parsed: MobileVersionInfo
+      if (typeof response.data === 'string') {
+        parsed = JSON.parse(response.data)
+      } else {
+        parsed = response.data as MobileVersionInfo
+      }
+      console.log('[OTA] Parsed version info:', parsed.version, parsed.versionCode)
+      return { ok: true, status: response.status, data: parsed }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
+      console.error('[OTA] CapacitorHttp failed:', msg)
       throw new Error(msg)
     }
   } else {
