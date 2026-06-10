@@ -34,13 +34,22 @@ export interface MobileVersionInfo {
   releaseNotes: string
 }
 
-export async function getMobileVersionInfo(): Promise<MobileVersionInfo | null> {
+export async function getMobileVersionInfo(): Promise<{
+  info: MobileVersionInfo | null
+  error?: string
+}> {
   try {
-    const response = await fetch(VERSION_URL, { cache: 'no-cache' })
-    if (!response.ok) return null
-    return (await response.json()) as MobileVersionInfo
-  } catch {
-    return null
+    // Cache-buster to bypass GitHub raw CDN caching
+    const url = `${VERSION_URL}?t=${Date.now()}`
+    const response = await fetch(url, { cache: 'no-cache' })
+    if (!response.ok) {
+      return { info: null, error: `Server returned ${response.status}` }
+    }
+    return { info: (await response.json()) as MobileVersionInfo }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[OTA] Failed to fetch version info:', msg)
+    return { info: null, error: msg }
   }
 }
 
@@ -53,27 +62,43 @@ export async function checkForMobileUpdate(): Promise<{
   available: boolean
   info?: MobileVersionInfo
   currentVersion?: string
+  currentVersionCode?: number
+  error?: string
 }> {
   if (!Capacitor.isNativePlatform()) return { available: false }
 
   const remote = await getMobileVersionInfo()
-  if (!remote) return { available: false }
+  if (remote.error) {
+    return { available: false, error: remote.error }
+  }
+  if (!remote.info) {
+    return { available: false, error: 'Could not read version info from server.' }
+  }
 
   const current = await getCurrentAppVersion()
   const currentVersionCode = parseInt(current.build, 10) || 0
 
   // Check if user previously skipped this version
   const { value: skipVersion } = await Preferences.get({ key: SKIP_VERSION_KEY })
-  if (!remote.force && skipVersion === remote.version) {
-    return { available: false }
+  if (!remote.info.force && skipVersion === remote.info.version) {
+    return { available: false, currentVersion: current.version, currentVersionCode }
   }
 
   // versionCode is the authoritative check for Android
-  if (remote.versionCode > currentVersionCode) {
-    return { available: true, info: remote, currentVersion: current.version }
+  if (remote.info.versionCode > currentVersionCode) {
+    return {
+      available: true,
+      info: remote.info,
+      currentVersion: current.version,
+      currentVersionCode,
+    }
   }
 
-  return { available: false }
+  return {
+    available: false,
+    currentVersion: current.version,
+    currentVersionCode,
+  }
 }
 
 export async function skipVersion(version: string): Promise<void> {

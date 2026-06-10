@@ -50,7 +50,7 @@ const MobileUpdatePrompt: React.FC = () => {
     }))
 
     // If initial check failed silently (no network, etc.), retry once
-    if (!isRetry && !result.available && !result.info) {
+    if (!isRetry && !result.available && !result.info && !result.error) {
       console.log('[MobileUpdate] No result, will retry in', RETRY_DELAY, 'ms')
       retryTimeoutRef.current = setTimeout(() => check(true), RETRY_DELAY)
     }

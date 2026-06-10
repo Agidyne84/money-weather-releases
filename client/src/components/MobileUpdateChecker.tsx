@@ -12,6 +12,8 @@ const MobileUpdateChecker: React.FC = () => {
   const [checking, setChecking] = useState(false)
   const [updateInfo, setUpdateInfo] = useState<MobileVersionInfo | null>(null)
   const [currentVersion, setCurrentVersion] = useState<string>('')
+  const [currentVersionCode, setCurrentVersionCode] = useState<number>(0)
+  const [isCurrent, setIsCurrent] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [needsPermission, setNeedsPermission] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -22,13 +24,19 @@ const MobileUpdateChecker: React.FC = () => {
     setChecking(true)
     setUpdateInfo(null)
     setError(null)
+    setIsCurrent(false)
     try {
       const result = await checkForMobileUpdate()
-      if (result.available && result.info) {
+      if (result.error) {
+        setError(result.error)
+      } else if (result.available && result.info) {
         setUpdateInfo(result.info)
         setCurrentVersion(result.currentVersion || '')
+        setCurrentVersionCode(result.currentVersionCode || 0)
       } else {
-        setUpdateInfo(null)
+        setIsCurrent(true)
+        setCurrentVersion(result.currentVersion || '')
+        setCurrentVersionCode(result.currentVersionCode || 0)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -86,12 +94,19 @@ const MobileUpdateChecker: React.FC = () => {
         </div>
       )}
 
-      {updateInfo ? (
-        <div className="space-y-3">
-          <div className="bg-green-50 border border-green-200 rounded p-3">
-            <p className="text-sm text-green-800 font-medium">Update available: v{updateInfo.version}</p>
+      {isCurrent && (
+        <div className="bg-green-50 border border-green-200 rounded p-3 mb-4">
+          <p className="text-sm text-green-800 font-medium">App is up to date</p>
+          <p className="text-xs text-green-700 mt-1">Current version: v{currentVersion} (build {currentVersionCode})</p>
+        </div>
+      )}
+
+      {updateInfo && (
+        <div className="space-y-3 mb-4">
+          <div className="bg-blue-50 border border-blue-200 rounded p-3">
+            <p className="text-sm text-blue-800 font-medium">Update available: v{updateInfo.version}</p>
             {currentVersion && (
-              <p className="text-xs text-green-700 mt-1">Current: v{currentVersion}</p>
+              <p className="text-xs text-blue-700 mt-1">Current: v{currentVersion} (build {currentVersionCode})</p>
             )}
             {updateInfo.releaseNotes && (
               <p className="text-xs text-gray-600 mt-1">{updateInfo.releaseNotes}</p>
@@ -105,7 +120,9 @@ const MobileUpdateChecker: React.FC = () => {
             {downloading ? 'Downloading...' : 'Update Now'}
           </button>
         </div>
-      ) : (
+      )}
+
+      {(!updateInfo && !isCurrent) && (
         <div className="flex items-center gap-3">
           <button
             onClick={handleCheck}

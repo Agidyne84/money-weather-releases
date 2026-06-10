@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.10",
-    "versionCode":  10110,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.10/app-release.apk",
+    "version":  "1.1.11",
+    "versionCode":  10111,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.11/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Cloud Sync refinements: editable mobile backup path, password modal with visibility toggles, passphrase renamed to password"
+    "releaseNotes":  "Mobile OTA update fix: cache-buster for version check, clear feedback for up-to-date / error / available states"
 }
