@@ -244,12 +244,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         <div className="px-4 py-2 sm:px-0">
           {children}
         </div>
+        {isNativePlatform() && <AppVersion />}
       </main>
 
       {!isNativePlatform() && <ConnectionStatus />}
 
       {isNativePlatform() && <MobileBottomNav />}
-      {isNativePlatform() && <AppVersion />}
 
       <ScrollToTop />
     </div>

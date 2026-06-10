@@ -364,12 +364,6 @@ function setupAutoUpdaterHandlers() {
 
   autoUpdater.on('update-not-available', () => {
     console.log('[Updater] App is up to date.');
-    dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'No Updates Available',
-      message: 'You are running the latest version of Money Weather.',
-      buttons: ['OK'],
-    }).catch(() => {});
   });
 
   autoUpdater.on('download-progress', (progress) => {

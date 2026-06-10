@@ -30,8 +30,8 @@ const Setup: React.FC = () => {
       {!hasRules && <RulesManager />}
       <BackupRestore />
       <CloudSyncSettings />
-      <MobileUpdateChecker />
       <AppLockSettings />
+      <MobileUpdateChecker />
     </div>
   )
 }
