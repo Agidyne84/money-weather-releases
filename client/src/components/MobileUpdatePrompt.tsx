@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { App } from '@capacitor/app'
+import { Capacitor } from '@capacitor/core'
 import {
   checkForMobileUpdate,
   canInstallPackages,
@@ -21,6 +23,7 @@ interface UpdateState {
 }
 
 const POLL_INTERVAL = 2000 // ms
+const RETRY_DELAY = 5000 // ms
 
 const MobileUpdatePrompt: React.FC = () => {
   const [state, setState] = useState<UpdateState>({
@@ -31,20 +34,51 @@ const MobileUpdatePrompt: React.FC = () => {
     needsPermission: false,
     error: null,
   })
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const check = useCallback(async () => {
+  const check = useCallback(async (isRetry = false) => {
+    console.log('[MobileUpdate] Checking for updates...', isRetry ? '(retry)' : '')
     const result = await checkForMobileUpdate()
+    console.log('[MobileUpdate] Result:', result)
     setState((prev) => ({
       ...prev,
       checking: false,
       available: result.available,
       info: result.info,
       currentVersion: result.currentVersion,
+      error: result.available ? null : prev.error,
     }))
+
+    // If initial check failed silently (no network, etc.), retry once
+    if (!isRetry && !result.available && !result.info) {
+      console.log('[MobileUpdate] No result, will retry in', RETRY_DELAY, 'ms')
+      retryTimeoutRef.current = setTimeout(() => check(true), RETRY_DELAY)
+    }
   }, [])
 
   useEffect(() => {
-    check()
+    // Delay initial check slightly to ensure network is ready after cold start
+    const initialTimeout = setTimeout(() => check(), 2000)
+
+    // Re-check when app comes back to foreground
+    let appStateListener: { remove: () => void } | null = null
+    if (Capacitor.isNativePlatform()) {
+      App.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) {
+          console.log('[MobileUpdate] App resumed — re-checking for updates')
+          setState((prev) => ({ ...prev, checking: true }))
+          check()
+        }
+      }).then((listener) => {
+        appStateListener = listener
+      })
+    }
+
+    return () => {
+      clearTimeout(initialTimeout)
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current)
+      if (appStateListener) appStateListener.remove()
+    }
   }, [check])
 
   const handleUpdate = async () => {
