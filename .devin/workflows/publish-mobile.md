@@ -44,28 +44,28 @@ Run the PowerShell script from the project root:
 # Set your GitHub token
 $env:GH_TOKEN = "ghp_xxxxxxxx"
 
-# Build APK and upload to the release created by desktop publish
-# IMPORTANT: This runs 'npx cap sync' then 'gradlew assembleRelease'.
-# Skipping cap sync means the APK will contain OLD web assets.
-.\publish-mobile.ps1 -Version "X.Y.Z" -Build
+# Build and publish (default — does everything automatically)
+# Runs: npm run build -> npx cap sync -> gradlew assembleRelease -> upload
+.\publish-mobile.ps1 -Version "X.Y.Z"
 ```
 
-> **CRITICAL — `npx cap sync`**: If the React web code changed (e.g. new components, bug fixes), you **must** run `npx cap sync` before building the APK. This copies `client/dist/` into the Android project's assets. Without it, the APK will have stale web code even though the native version number is correct. This is the #1 cause of "the update is installed but the UI didn't change."
+> **Default behavior**: The script always builds the web app, syncs Capacitor, and builds the APK. You don't need to do any of this manually.
 
-> **`-SkipBuild` is dangerous**: Only use it if you already built the APK **with `npx cap sync`** in the same session. If you built manually without `cap sync`, the APK has stale web assets — do NOT use `-SkipBuild`.
+> **`-SkipBuild`**: Only use if you're re-uploading the exact same APK (e.g. first upload failed). If source code changed and you use `-SkipBuild`, the APK will have stale web assets.
 
 ```powershell
-# Overwrite an existing APK asset (use only after a fresh -Build):
+# Overwrite an existing APK asset (re-upload only):
 .\publish-mobile.ps1 -Version "X.Y.Z" -SkipBuild -Force
 ```
 
 The script will:
-1. Sync Capacitor (`npx cap sync`) if `-Build` is used
-2. Build the release APK (`gradlew assembleRelease`) if `-Build` is used
-3. Find the existing GitHub release by tag (created by desktop `npm run publish`)
-4. Upload `app-release.apk` as a release asset
-5. Update `mobile-version.json` with the correct `versionCode` and `downloadUrl`
-6. Commit and push the updated `mobile-version.json`
+1. Build the React web app (`npm run build`)
+2. Sync Capacitor (`npx cap sync`) — copies `client/dist/` into Android assets
+3. Build the release APK (`gradlew assembleRelease`)
+4. Find the existing GitHub release by tag (created by desktop `npm run publish`)
+5. Upload `app-release.apk` as a release asset
+6. Update `mobile-version.json` with the correct `versionCode` and `downloadUrl`
+7. Commit and push the updated `mobile-version.json`
 
 > **Important**: APK must be signed with the same keystore as previous releases, or Android will reject the update install.
 
@@ -73,12 +73,10 @@ The script will:
 
 ### Build release APK
 ```bash
-# Must run in this order. Skipping cap sync = stale web assets in the APK.
+# The script does this automatically. Only do this if the script failed.
 cd client
 npm run build          # Build the React web app
-cd ..                  # Return to repo root
-cd electron            # Or wherever you run npm run build
-cd ..                  #
+cd ..
 npx cap sync           # Copy dist/ into Android assets
 cd client/android
 .\gradlew.bat assembleRelease

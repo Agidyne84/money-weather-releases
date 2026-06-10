@@ -17,16 +17,16 @@
     GitHub personal access token with 'repo' scope. Defaults to $env:GH_TOKEN.
 
 .PARAMETER Build
-    If specified, runs gradlew assembleRelease before uploading.
+    (Deprecated — now the default.) Runs npx cap sync + gradlew assembleRelease before uploading.
 
 .PARAMETER SkipBuild
-    If specified, skips the APK build step and uploads an existing APK.
+    If specified, skips the APK build step and uploads an existing APK. Use only when re-uploading the same APK.
 
 .PARAMETER Force
     If specified, overwrites an existing APK asset on the release.
 
 .EXAMPLE
-    .\publish-mobile.ps1 -Version "1.1.5" -Token "ghp_xxxx" -Build
+    .\publish-mobile.ps1 -Version "1.1.5" -Token "ghp_xxxx"
 
 .EXAMPLE
     .\publish-mobile.ps1 -Version "1.1.5" -SkipBuild -Force
@@ -150,8 +150,13 @@ Write-Host "Repo:        $RepoOwner/$RepoName"
 Write-Host ""
 
 # ── Build APK (if requested) ─────────────────────────────────────────────────
-if ($Build) {
+if (-not $SkipBuild) {
     Write-Host "Building release APK..." -ForegroundColor Cyan
+
+    Write-Host "  Building React web app..." -ForegroundColor Gray
+    Set-Location client
+    npm run build 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+    Set-Location ..
 
     Write-Host "  Syncing Capacitor..." -ForegroundColor Gray
     Set-Location client
@@ -166,13 +171,6 @@ if ($Build) {
     Test-ApkExists $ApkPath
     $apkSize = [math]::Round((Get-Item $ApkPath).Length / 1MB, 2)
     Write-Host "APK built: $ApkPath ($apkSize MB)" -ForegroundColor Green
-}
-elseif (-not $SkipBuild) {
-    Write-Host "Checking for existing APK..." -ForegroundColor Cyan
-    Test-ApkExists $ApkPath
-    Test-WebAssetsStale $ApkPath
-    $apkSize = [math]::Round((Get-Item $ApkPath).Length / 1MB, 2)
-    Write-Host "Found APK: $ApkPath ($apkSize MB)" -ForegroundColor Green
 }
 else {
     Test-ApkExists $ApkPath
