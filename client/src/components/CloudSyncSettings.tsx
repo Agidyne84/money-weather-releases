@@ -5,7 +5,6 @@ import {
   getCloudSyncSettings,
   setCloudSyncEnabled,
   setCloudSyncPath,
-  performSync,
   checkCloudSyncStatus,
   pullCloudBackup,
   pushCloudBackup,
@@ -15,9 +14,13 @@ import {
   storePassphrase,
   deleteStoredPassphrase,
 } from '../services/securePassphrase'
+import { verifyBackupPassword } from '../utils/mobileBackup'
 import AppLock from './AppLock'
 
 const isNative = Capacitor.isNativePlatform()
+
+type PasswordModalContext = 'create' | 'verify-existing' | 'create-new'
+type SyncMode = 'push' | 'pull'
 
 const CloudSyncSettings: React.FC = () => {
   const [settings, setSettings] = useState<{
@@ -34,11 +37,19 @@ const CloudSyncSettings: React.FC = () => {
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [passwordModalContext, setPasswordModalContext] = useState<PasswordModalContext>('create')
   const [pendingPathSetup, setPendingPathSetup] = useState<string | null>(null)
   const [pendingPasswordSave, setPendingPasswordSave] = useState(false)
   const [showAppLock, setShowAppLock] = useState(false)
+  const [appLockAction, setAppLockAction] = useState<'save-password' | 'verify-file'>('save-password')
+  const [syncMode, setSyncMode] = useState<SyncMode>('push')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [fileStatus, setFileStatus] = useState<string>('')
+
+  // For verifying an existing file
+  const [pendingFileBuffer, setPendingFileBuffer] = useState<ArrayBuffer | null>(null)
+  const [pendingFileName, setPendingFileName] = useState<string | null>(null)
+  const [verifyError, setVerifyError] = useState(false)
 
   const loadSettings = useCallback(async () => {
     const s = await getCloudSyncSettings()
@@ -93,104 +104,102 @@ const CloudSyncSettings: React.FC = () => {
     await setCloudSyncPath(filePath)
     setSettings(prev => ({ ...prev, filePath }))
 
-    // Prompt for passphrase if not yet set
     const hp = await hasStoredPassphrase()
     if (!hp) {
       setPendingPathSetup(filePath)
+      setPasswordModalContext('create')
       setShowPasswordModal(true)
       return
     }
 
-    // Create initial encrypted backup
     await createInitialBackup(filePath)
   }
 
-  const handlePickFile = async () => {
-    if (!isNative) {
-      // Desktop: use Electron folder picker
-      const electronAPI = (window as any).electronAPI
-      if (electronAPI?.showOpenDirectoryDialog) {
-        const result = await electronAPI.showOpenDirectoryDialog({
-          title: 'Choose folder for cloud backup',
-        })
-        if (!result.canceled && result.filePaths.length > 0) {
-          const folderPath = result.filePaths[0]
-          const separator = folderPath.includes('\\') ? '\\' : '/'
-          const filePath = `${folderPath}${separator}cloud-backup.budgetbackup`
-          await finalizePathSelection(filePath)
-        }
-      } else {
-        // Fallback to prompt
-        const path = prompt('Enter the full file path for your cloud backup:', settings.filePath || '')
-        if (path) await finalizePathSelection(path)
+  /* ─── Desktop file picker ─── */
+  const handlePickFileDesktop = async () => {
+    const electronAPI = (window as any).electronAPI
+    if (electronAPI?.showOpenDirectoryDialog) {
+      const result = await electronAPI.showOpenDirectoryDialog({
+        title: 'Choose folder for cloud backup',
+      })
+      if (!result.canceled && result.filePaths.length > 0) {
+        const folderPath = result.filePaths[0]
+        const separator = folderPath.includes('\\') ? '\\' : '/'
+        const filePath = `${folderPath}${separator}cloud-backup.budgetbackup`
+        await finalizePathSelection(filePath)
       }
-      return
+    } else {
+      const path = prompt('Enter the full file path for your cloud backup:', settings.filePath || '')
+      if (path) await finalizePathSelection(path)
     }
+  }
 
-    // Mobile: trigger native file picker via hidden input
+  /* ─── Mobile: select existing file ─── */
+  const handleSelectExisting = () => {
     fileInputRef.current?.click()
+  }
+
+  /* ─── Mobile: create new file ─── */
+  const handleCreateNew = () => {
+    const filename = window.prompt('Enter a filename for the new backup (saved in app Documents):', 'cloud-backup.budgetbackup')
+    if (!filename) return
+    const safeName = filename.endsWith('.budgetbackup') ? filename : `${filename}.budgetbackup`
+    setPendingFileName(safeName)
+    setPasswordModalContext('create-new')
+    setPassword('')
+    setConfirmPassword('')
+    setVerifyError(false)
+    setShowPasswordModal(true)
   }
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    // Reset input so same file can be selected again
     e.target.value = ''
 
-    if (isNative) {
-      // On mobile: copy selected file to Documents so we have a persistent path
-      const filename = file.name.endsWith('.budgetbackup')
-        ? file.name
-        : 'cloud-backup.budgetbackup'
-      try {
-        const arrayBuffer = await file.arrayBuffer()
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
-        await Filesystem.writeFile({
-          path: filename,
-          directory: Directory.Documents,
-          data: base64,
-          encoding: 'base64' as any,
-        })
-        await finalizePathSelection(filename)
-      } catch (err) {
-        console.error('[CloudSync] Failed to write selected file:', err)
-        setMessage({ type: 'error', text: 'Could not save the selected file.' })
-      }
-    } else {
-      // Desktop: not reachable here since desktop uses Electron API above
-      await finalizePathSelection(file.name)
-    }
-  }
-
-  const doSyncAction = async (action: 'push' | 'pull' | 'sync') => {
-    if (!settings.filePath) {
-      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
+    if (!file.name.endsWith('.budgetbackup')) {
+      setMessage({ type: 'error', text: 'Please select a .budgetbackup file.' })
       return
     }
 
-    setLoading(true)
-    setMessage(null)
     try {
-      let result: { action: string; message: string } | { success: boolean; message: string }
-      if (action === 'push') {
-        const r = await pushCloudBackup(settings.filePath)
-        result = { action: 'pushed', message: `Pushed to cloud (${r.size} bytes).` }
-      } else if (action === 'pull') {
-        const r = await pullCloudBackup(settings.filePath)
-        result = { action: 'pulled', message: `Pulled from cloud: ${r.summary.accounts} accounts, ${r.summary.transactions} transactions.` }
+      const buffer = await file.arrayBuffer()
+      setPendingFileBuffer(buffer)
+      setPendingFileName(file.name)
+      setPassword('')
+      setConfirmPassword('')
+      setVerifyError(false)
+      setPasswordModalContext('verify-existing')
+      setShowPasswordModal(true)
+    } catch {
+      setMessage({ type: 'error', text: 'Could not read the selected file.' })
+    }
+  }
+
+  const handleVerifyFilePassword = async () => {
+    if (!pendingFileBuffer || !pendingFileName) return
+    if (!password) return
+
+    setLoading(true)
+    setVerifyError(false)
+    try {
+      const ok = await verifyBackupPassword(pendingFileBuffer, password)
+      if (ok) {
+        setShowPasswordModal(false)
+        setAppLockAction('verify-file')
+        setPendingPasswordSave(true)
+        setShowAppLock(true)
       } else {
-        result = await performSync(settings.filePath)
+        setVerifyError(true)
       }
-      setMessage({ type: 'success', text: (result as any).message || 'Done' })
-      loadSettings()
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
+    } catch {
+      setVerifyError(true)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSavePassword = async () => {
+  const handleSaveNewFilePassword = async () => {
     if (password.length < 8) {
       setMessage({ type: 'error', text: 'Password must be at least 8 characters.' })
       return
@@ -199,16 +208,16 @@ const CloudSyncSettings: React.FC = () => {
       setMessage({ type: 'error', text: 'Passwords do not match.' })
       return
     }
-    // Show full-screen AppLock to verify PIN before encrypting password
     setShowPasswordModal(false)
+    setAppLockAction('save-password')
     setPendingPasswordSave(true)
     setShowAppLock(true)
   }
 
   const handleAppLockUnlock = () => {
-    // AppLock unlocked — if this was for password save, it already
-    // called onUnlockWithPin which handled the save.
     setShowAppLock(false)
+    setPendingPasswordSave(false)
+    setAppLockAction('save-password')
   }
 
   const handleAppLockUnlockWithPin = async (pin: string) => {
@@ -220,6 +229,30 @@ const CloudSyncSettings: React.FC = () => {
       setPassword('')
       setConfirmPassword('')
       setMessage({ type: 'success', text: 'Password saved securely.' })
+
+      // Verifying existing file: copy it to Documents and set path
+      if (appLockAction === 'verify-file' && pendingFileName && pendingFileBuffer) {
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(pendingFileBuffer)))
+        await Filesystem.writeFile({
+          path: pendingFileName,
+          directory: Directory.Documents,
+          data: base64,
+          encoding: 'base64' as any,
+        })
+        await setCloudSyncPath(pendingFileName)
+        setSettings(prev => ({ ...prev, filePath: pendingFileName }))
+        setPendingFileBuffer(null)
+        setPendingFileName(null)
+        loadSettings()
+      }
+
+      // Creating new file: create initial backup
+      if (appLockAction === 'save-password' && pendingFileName) {
+        await setCloudSyncPath(pendingFileName)
+        setSettings(prev => ({ ...prev, filePath: pendingFileName }))
+        await createInitialBackup(pendingFileName)
+        setPendingFileName(null)
+      }
 
       if (pendingPathSetup) {
         await createInitialBackup(pendingPathSetup)
@@ -239,6 +272,62 @@ const CloudSyncSettings: React.FC = () => {
     setHasPassword(false)
     setMessage({ type: 'success', text: 'Password removed.' })
   }
+
+  const doSync = async () => {
+    if (!settings.filePath) {
+      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
+      return
+    }
+
+    setLoading(true)
+    setMessage(null)
+    try {
+      if (syncMode === 'push') {
+        const r = await pushCloudBackup(settings.filePath)
+        setMessage({ type: 'success', text: `Pushed to cloud (${r.size} bytes).` })
+      } else {
+        const r = await pullCloudBackup(settings.filePath)
+        const counts = Object.entries(r.summary)
+          .map(([table, count]) => `${table.replace(/_/g, ' ')}: ${count}`)
+          .join(', ')
+        setMessage({ type: 'success', text: `Pulled from cloud: ${counts}.` })
+      }
+      loadSettings()
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const canSync = settings.enabled && !!settings.filePath && hasPassword
+
+  const getPasswordModalTitle = () => {
+    switch (passwordModalContext) {
+      case 'verify-existing': return 'Verify Backup Password'
+      case 'create-new': return 'Create Password for New Backup'
+      default: return hasPassword ? 'Change Encryption Password' : 'Create Encryption Password'
+    }
+  }
+
+  const getPasswordModalButtonLabel = () => {
+    if (loading) return 'Processing...'
+    switch (passwordModalContext) {
+      case 'verify-existing': return 'Verify Password'
+      case 'create-new': return 'Save Password'
+      default: return 'Save Password'
+    }
+  }
+
+  const handlePasswordModalPrimary = () => {
+    if (passwordModalContext === 'verify-existing') {
+      handleVerifyFilePassword()
+    } else {
+      handleSaveNewFilePassword()
+    }
+  }
+
+  const showConfirmInModal = passwordModalContext !== 'verify-existing'
 
   return (
     <div className="space-y-6">
@@ -263,19 +352,39 @@ const CloudSyncSettings: React.FC = () => {
 
       {settings.enabled && (
         <>
+          {/* File Path Card */}
           <div className="bg-gray-50 rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-700">Backup File Path</p>
                 <p className="text-xs text-gray-500 break-all">{settings.filePath || 'Not set'}</p>
               </div>
-              <button
-                onClick={handlePickFile}
-                className="ml-3 px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                {settings.filePath ? 'Change' : 'Set Path'}
-              </button>
+              {!isNative && (
+                <button
+                  onClick={handlePickFileDesktop}
+                  className="ml-3 px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 shrink-0"
+                >
+                  {settings.filePath ? 'Change' : 'Set Path'}
+                </button>
+              )}
             </div>
+
+            {isNative && (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSelectExisting}
+                  className="flex-1 px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Select Existing File
+                </button>
+                <button
+                  onClick={handleCreateNew}
+                  className="flex-1 px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Create New File
+                </button>
+              </div>
+            )}
 
             {settings.filePath && fileStatus && (
               <p className="text-xs text-gray-500">Status: {fileStatus}</p>
@@ -288,6 +397,7 @@ const CloudSyncSettings: React.FC = () => {
             )}
           </div>
 
+          {/* Password Card */}
           <div className="bg-gray-50 rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
@@ -297,7 +407,7 @@ const CloudSyncSettings: React.FC = () => {
                 </p>
               </div>
               <button
-                onClick={() => setShowPasswordModal(true)}
+                onClick={() => { setPasswordModalContext('create'); setPassword(''); setConfirmPassword(''); setVerifyError(false); setShowPasswordModal(true) }}
                 className="ml-3 px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50"
               >
                 {hasPassword ? 'Edit Password' : 'Create Password'}
@@ -305,64 +415,82 @@ const CloudSyncSettings: React.FC = () => {
             </div>
           </div>
 
-          {settings.filePath && (
-            <div className="flex gap-2">
+          {/* Push / Pull Toggle + Sync Now */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+              <span className="text-sm font-medium text-gray-700">
+                {syncMode === 'push' ? 'Push to Cloud' : 'Pull from Cloud'}
+              </span>
               <button
-                onClick={() => doSyncAction('sync')}
-                disabled={loading}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
+                onClick={() => setSyncMode(syncMode === 'push' ? 'pull' : 'push')}
+                className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors bg-gray-300"
+                title="Toggle Push / Pull"
               >
-                {loading ? 'Syncing...' : 'Sync Now'}
-              </button>
-              <button
-                onClick={() => doSyncAction('push')}
-                disabled={loading}
-                className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200 disabled:opacity-50"
-              >
-                Push
-              </button>
-              <button
-                onClick={() => doSyncAction('pull')}
-                disabled={loading}
-                className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200 disabled:opacity-50"
-              >
-                Pull
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    syncMode === 'pull' ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
               </button>
             </div>
-          )}
+
+            <button
+              onClick={doSync}
+              disabled={loading || !canSync}
+              className="w-full px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Syncing...' : 'Sync Now'}
+            </button>
+
+            {!canSync && (
+              <p className="text-xs text-gray-500 text-center">
+                {!settings.filePath ? 'Set a backup file path to enable sync.' : 'Set a password to enable sync.'}
+              </p>
+            )}
+          </div>
         </>
       )}
 
-      {/* Hidden native file input for mobile */}
+      {/* Hidden native file input for mobile (accept ALL files so .budgetbackup shows) */}
       {isNative && (
         <input
           ref={fileInputRef}
           type="file"
-          accept=".budgetbackup,.json"
+          accept="*/*"
           className="hidden"
           onChange={handleFileSelected}
         />
       )}
 
-      {/* Password Modal */}
+      {/* Password Modal — context-aware */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">
-              {hasPassword ? 'Change Encryption Password' : 'Create Encryption Password'}
-            </h3>
-            <p className="text-sm text-gray-600">
-              This password encrypts your cloud backup files. Use the same password on all devices.
-            </p>
+            <h3 className="text-lg font-semibold text-gray-900">{getPasswordModalTitle()}</h3>
+
+            {passwordModalContext === 'verify-existing' ? (
+              <p className="text-sm text-gray-600">
+                Enter the password for this backup file to verify ownership.
+              </p>
+            ) : (
+              <p className="text-sm text-gray-600">
+                This password encrypts your cloud backup files. Use the same password on all devices.
+              </p>
+            )}
+
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-gray-700">New Password</label>
+              <label className="block text-xs font-medium text-gray-700">
+                {passwordModalContext === 'verify-existing' ? 'Password' : 'New Password'}
+              </label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter password (min 8 chars)"
+                  placeholder={passwordModalContext === 'verify-existing' ? 'Enter password' : 'Enter password (min 8 chars)'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm pr-12"
+                  className={`w-full px-3 py-2 border rounded-md text-sm pr-12 ${
+                    verifyError ? 'border-red-500' : 'border-gray-300'
+                  }`}
                 />
                 <button
                   onClick={() => setShowPassword(!showPassword)}
@@ -371,41 +499,49 @@ const CloudSyncSettings: React.FC = () => {
                   {showPassword ? 'Hide' : 'Show'}
                 </button>
               </div>
+              {verifyError && (
+                <p className="text-xs text-red-600">Incorrect password. Please try again.</p>
+              )}
             </div>
-            <div className="space-y-1">
-              <label className="block text-xs font-medium text-gray-700">Confirm Password</label>
-              <div className="relative">
-                <input
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  placeholder="Confirm password"
-                  value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm pr-12"
-                />
-                <button
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-blue-600"
-                >
-                  {showConfirmPassword ? 'Hide' : 'Show'}
-                </button>
+
+            {showConfirmInModal && (
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-700">Confirm Password</label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    placeholder="Confirm password"
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm pr-12"
+                  />
+                  <button
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-blue-600"
+                  >
+                    {showConfirmPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
+
             <div className="flex gap-2">
               <button
-                onClick={handleSavePassword}
-                disabled={loading}
+                onClick={handlePasswordModalPrimary}
+                disabled={loading || !password || (showConfirmInModal && !confirmPassword)}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
               >
-                {loading ? 'Saving...' : 'Save Password'}
+                {getPasswordModalButtonLabel()}
               </button>
               <button
-                onClick={() => { setShowPasswordModal(false); setPassword(''); setConfirmPassword('') }}
+                onClick={() => { setShowPasswordModal(false); setPassword(''); setConfirmPassword(''); setVerifyError(false) }}
                 className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
               >
                 Cancel
               </button>
             </div>
-            {hasPassword && (
+
+            {passwordModalContext === 'create' && hasPassword && (
               <button
                 onClick={handleDeletePassword}
                 className="w-full px-4 py-2 text-sm text-red-600 bg-red-50 rounded-md hover:bg-red-100"

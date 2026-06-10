@@ -37,26 +37,39 @@ export interface MobileVersionInfo {
 
 async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: number; data: MobileVersionInfo | null }> {
   if (Capacitor.isNativePlatform()) {
-    // Use CapacitorHttp for native requests — bypasses WebView CORS/fetch issues
+    // Primary: CapacitorHttp (bypasses WebView CORS/fetch issues)
     try {
       console.log('[OTA] CapacitorHttp.get:', url)
       const response = await CapacitorHttp.get({ url })
-      console.log('[OTA] CapacitorHttp response status:', response.status)
+      console.log('[OTA] CapacitorHttp response:', response.status, typeof response.data)
       if (response.status < 200 || response.status >= 300) {
         return { ok: false, status: response.status, data: null }
       }
-      // Response.data may already be parsed or may be a string
       let parsed: MobileVersionInfo
       if (typeof response.data === 'string') {
         parsed = JSON.parse(response.data)
       } else {
         parsed = response.data as MobileVersionInfo
       }
-      console.log('[OTA] Parsed version info:', parsed.version, parsed.versionCode)
+      console.log('[OTA] Parsed:', parsed.version, parsed.versionCode)
       return { ok: true, status: response.status, data: parsed }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error('[OTA] CapacitorHttp failed:', msg)
+      console.warn('[OTA] CapacitorHttp failed, falling back to fetch:', msg)
+      // Fallback to standard fetch — may fail on CORS but worth a try
+    }
+
+    // Fallback: standard fetch with no-cors mode as last resort
+    try {
+      const response = await fetch(url, { mode: 'cors', cache: 'no-store' })
+      console.log('[OTA] Fallback fetch status:', response.status)
+      if (!response.ok) {
+        return { ok: false, status: response.status, data: null }
+      }
+      return { ok: true, status: response.status, data: (await response.json()) as MobileVersionInfo }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[OTA] Fallback fetch also failed:', msg)
       throw new Error(msg)
     }
   } else {

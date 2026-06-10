@@ -9,6 +9,9 @@ const config: CapacitorConfig = {
       iosDatabaseLocation: 'Library/CapacitorDatabase',
       androidDatabaseLocation: 'files/databases',
     },
+    CapacitorHttp: {
+      enabled: true,
+    },
   },
 }
 

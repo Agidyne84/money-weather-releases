@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.14",
-    "versionCode":  10114,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.14/app-release.apk",
+    "version":  "1.1.15",
+    "versionCode":  10115,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.15/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Cloud Sync: native file picker for mobile backup path, password save uses full AppLock, removed current password field, sync no longer requires unlock. OTA: CapacitorHttp without invalid timeout options."
+    "releaseNotes":  "Cloud Sync: mobile Select Existing/Create New file buttons, password verify for existing files, Push/Pull toggle + Sync Now. OTA: CapacitorHttp enabled in config + fallback fetch."
 }

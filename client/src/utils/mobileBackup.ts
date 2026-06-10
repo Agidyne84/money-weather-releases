@@ -339,6 +339,23 @@ export async function resetMobileDatabase(): Promise<{ success: boolean; message
  * Share an encrypted backup file using the native share sheet.
  * Returns the temp file path for debugging purposes.
  */
+/**
+ * Verify that the provided passphrase can decrypt the given backup file.
+ * Returns true if decryption succeeds without importing data.
+ */
+export async function verifyBackupPassword(fileBuffer: ArrayBuffer, passphrase: string): Promise<boolean> {
+  const fileBytes = new Uint8Array(fileBuffer)
+  if (!arrayEquals(fileBytes.subarray(0, 4), MAGIC)) {
+    return false
+  }
+  try {
+    await decrypt(fileBytes, passphrase)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function shareMobileBackup(data: Uint8Array, filename: string): Promise<string> {
   // Write to a temp file in the cache directory
   const base64Data = btoa(String.fromCharCode(...data))
