@@ -35,12 +35,44 @@ export interface MobileVersionInfo {
   releaseNotes: string
 }
 
+async function fetchWithXHR(url: string): Promise<{ ok: boolean; status: number; data: MobileVersionInfo | null }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('GET', url, true)
+    xhr.setRequestHeader('Accept', 'application/json')
+    xhr.setRequestHeader('Cache-Control', 'no-cache')
+    xhr.timeout = FETCH_TIMEOUT_MS
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const parsed = JSON.parse(xhr.responseText) as MobileVersionInfo
+          resolve({ ok: true, status: xhr.status, data: parsed })
+        } catch {
+          resolve({ ok: false, status: xhr.status, data: null })
+        }
+      } else {
+        resolve({ ok: false, status: xhr.status, data: null })
+      }
+    }
+    xhr.onerror = () => reject(new Error('XHR network error'))
+    xhr.ontimeout = () => reject(new Error('XHR timeout'))
+    xhr.send()
+  })
+}
+
 async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: number; data: MobileVersionInfo | null }> {
   if (Capacitor.isNativePlatform()) {
     // Primary: CapacitorHttp (bypasses WebView CORS/fetch issues)
     try {
       console.log('[OTA] CapacitorHttp.get:', url)
-      const response = await CapacitorHttp.get({ url })
+      const response = await CapacitorHttp.get({
+        url,
+        headers: {
+          'User-Agent': 'MoneyWeather-App/1.1.16',
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
+      })
       console.log('[OTA] CapacitorHttp response:', response.status, typeof response.data)
       if (response.status < 200 || response.status >= 300) {
         return { ok: false, status: response.status, data: null }
@@ -48,20 +80,26 @@ async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: num
       let parsed: MobileVersionInfo
       if (typeof response.data === 'string') {
         parsed = JSON.parse(response.data)
-      } else {
+      } else if (response.data && typeof response.data === 'object') {
         parsed = response.data as MobileVersionInfo
+      } else {
+        console.error('[OTA] Unexpected response.data type:', typeof response.data)
+        return { ok: false, status: response.status, data: null }
       }
       console.log('[OTA] Parsed:', parsed.version, parsed.versionCode)
       return { ok: true, status: response.status, data: parsed }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.warn('[OTA] CapacitorHttp failed, falling back to fetch:', msg)
-      // Fallback to standard fetch — may fail on CORS but worth a try
     }
 
-    // Fallback: standard fetch with no-cors mode as last resort
+    // Fallback 1: standard fetch (may also be intercepted by CapacitorHttp)
     try {
-      const response = await fetch(url, { mode: 'cors', cache: 'no-store' })
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store',
+      })
       console.log('[OTA] Fallback fetch status:', response.status)
       if (!response.ok) {
         return { ok: false, status: response.status, data: null }
@@ -69,7 +107,18 @@ async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: num
       return { ok: true, status: response.status, data: (await response.json()) as MobileVersionInfo }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error('[OTA] Fallback fetch also failed:', msg)
+      console.warn('[OTA] Fallback fetch failed:', msg)
+    }
+
+    // Fallback 2: XMLHttpRequest (alternative native transport)
+    try {
+      console.log('[OTA] Trying XMLHttpRequest...')
+      const result = await fetchWithXHR(url)
+      console.log('[OTA] XHR result:', result.status, result.ok)
+      return result
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[OTA] XMLHttpRequest also failed:', msg)
       throw new Error(msg)
     }
   } else {

@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.15",
-    "versionCode":  10115,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.15/app-release.apk",
+    "version":  "1.1.16",
+    "versionCode":  10116,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.16/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Cloud Sync: mobile Select Existing/Create New file buttons, password verify for existing files, Push/Pull toggle + Sync Now. OTA: CapacitorHttp enabled in config + fallback fetch."
+    "releaseNotes":  "OTA: Added missing INTERNET permission to AndroidManifest, added User-Agent headers and XMLHttpRequest fallback. Cloud Sync: unified Select Existing/Create New across desktop and mobile, removed standalone password button, password only managed through file operations, desktop file picker uses Electron dialog with password verification via fs:read."
 }
