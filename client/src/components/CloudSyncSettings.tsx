@@ -40,7 +40,7 @@ const CloudSyncSettings: React.FC = () => {
   const [pendingPasswordSave, setPendingPasswordSave] = useState(false)
   const [showAppLock, setShowAppLock] = useState(false)
   const [appLockAction, setAppLockAction] = useState<'save-password' | 'verify-file'>('save-password')
-  const [syncMode, setSyncMode] = useState<SyncMode>('push')
+  const [syncMode, setSyncMode] = useState<SyncMode>('pull')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [fileStatus, setFileStatus] = useState<string>('')
 
@@ -144,20 +144,19 @@ const CloudSyncSettings: React.FC = () => {
   /* ─── Create New File ─── */
   const handleCreateNew = async () => {
     if (!isNative) {
-      // Desktop: use Electron folder picker + filename prompt
+      // Desktop: use Electron save dialog with default filename + .budgetbackup filter
       const electronAPI = (window as any).electronAPI
-      if (electronAPI?.showOpenDirectoryDialog) {
-        const result = await electronAPI.showOpenDirectoryDialog({
-          title: 'Choose folder for cloud backup',
+      if (electronAPI?.showSaveDialog) {
+        const result = await electronAPI.showSaveDialog({
+          title: 'Create Cloud Backup File',
+          defaultPath: 'cloud-backup.budgetbackup',
+          filters: [{ name: 'Budget Backup', extensions: ['budgetbackup'] }],
         })
-        if (result.canceled || result.filePaths.length === 0) return
-        const folderPath = result.filePaths[0]
-        const filename = prompt('Enter a filename for the new backup:', 'cloud-backup.budgetbackup')
-        if (!filename) return
-        const safeName = filename.endsWith('.budgetbackup') ? filename : `${filename}.budgetbackup`
-        const separator = folderPath.includes('\\') ? '\\' : '/'
-        const filePath = `${folderPath}${separator}${safeName}`
-        setPendingFileName(filePath)
+        if (result.canceled || !result.filePath) return
+        const safePath = result.filePath.endsWith('.budgetbackup')
+          ? result.filePath
+          : `${result.filePath}.budgetbackup`
+        setPendingFileName(safePath)
         setPasswordModalContext('create-new')
         setPassword('')
         setConfirmPassword('')
@@ -178,10 +177,8 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Mobile: prompt for filename (saved in app Documents)
-    const filename = window.prompt('Enter a filename for the new backup (saved in app Documents):', 'cloud-backup.budgetbackup')
-    if (!filename) return
-    const safeName = filename.endsWith('.budgetbackup') ? filename : `${filename}.budgetbackup`
+    // Mobile: create directly in app Documents with default name
+    const safeName = 'cloud-backup.budgetbackup'
     setPendingFileName(safeName)
     setPasswordModalContext('create-new')
     setPassword('')
@@ -422,7 +419,7 @@ const CloudSyncSettings: React.FC = () => {
               </span>
               <button
                 onClick={() => setSyncMode(syncMode === 'push' ? 'pull' : 'push')}
-                className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors bg-gray-300"
+                className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors bg-blue-600"
                 title="Toggle Push / Pull"
               >
                 <span

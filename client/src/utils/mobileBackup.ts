@@ -39,7 +39,7 @@ async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKe
   return crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: salt.buffer as ArrayBuffer,
+      salt: salt.buffer.slice(salt.byteOffset, salt.byteOffset + salt.byteLength) as ArrayBuffer,
       iterations: PBKDF2_ITERATIONS,
       hash: 'SHA-256',
     },
@@ -117,9 +117,9 @@ async function decrypt(fileBuffer: Uint8Array, passphrase: string): Promise<Uint
 
   try {
     const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
+      { name: 'AES-GCM', iv: iv.buffer.slice(iv.byteOffset, iv.byteOffset + iv.byteLength) as ArrayBuffer },
       key,
-      cipherWithTag.buffer as ArrayBuffer
+      cipherWithTag.buffer.slice(cipherWithTag.byteOffset, cipherWithTag.byteOffset + cipherWithTag.byteLength) as ArrayBuffer
     )
     return new Uint8Array(decrypted)
   } catch {

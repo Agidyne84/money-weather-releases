@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.16",
-    "versionCode":  10116,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.16/app-release.apk",
+    "version":  "1.1.17",
+    "versionCode":  10117,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.17/app-release.apk",
     "force":  false,
-    "releaseNotes":  "OTA: Added missing INTERNET permission to AndroidManifest, added User-Agent headers and XMLHttpRequest fallback. Cloud Sync: unified Select Existing/Create New across desktop and mobile, removed standalone password button, password only managed through file operations, desktop file picker uses Electron dialog with password verification via fs:read."
+    "releaseNotes":  "Cloud Sync: Fixed password verification bug (Web Crypto ArrayBuffer slicing), push/pull toggle defaults to Pull and stays blue, desktop Create New uses save dialog with default filename, mobile Create New uses default name in Documents. OTA: added plain-URL fallback for cache-buster issues. Desktop: fixed installer dialog null-window bug."
 }

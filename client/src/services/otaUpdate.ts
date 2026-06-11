@@ -143,11 +143,14 @@ export async function getMobileVersionInfo(): Promise<{
   info: MobileVersionInfo | null
   error?: string
 }> {
-  // Cache-buster to bypass GitHub raw CDN caching
-  const url = `${VERSION_URL}?t=${Date.now()}`
+  // Primary: cache-buster to bypass GitHub raw CDN caching
+  const urlWithCache = `${VERSION_URL}?t=${Date.now()}`
+  // Fallback: plain URL (some networks/proxies block query strings)
+  const urlPlain = VERSION_URL
 
   // Try up to 3 times with exponential backoff
   for (let attempt = 1; attempt <= 3; attempt++) {
+    const url = attempt === 3 ? urlPlain : urlWithCache
     try {
       const result = await fetchVersionJson(url)
       if (!result.ok) {
@@ -160,7 +163,7 @@ export async function getMobileVersionInfo(): Promise<{
     } catch (err) {
       const isAbort = err instanceof Error && err.name === 'AbortError'
       const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[OTA] Fetch attempt ${attempt} failed:`, msg)
+      console.error(`[OTA] Fetch attempt ${attempt} failed (${url}):`, msg)
 
       if (attempt === 3) {
         if (isAbort) {

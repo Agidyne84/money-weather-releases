@@ -448,8 +448,11 @@ autoUpdater.on('update-downloaded', (info) => {
     mainWindow.webContents.send('update-downloaded');
   }
 
+  // Ensure we have a valid window reference for dialog parent
+  const dialogParent = mainWindow || BrowserWindow.getFocusedWindow() || undefined;
+
   // Notify user and offer to restart now or on next launch
-  dialog.showMessageBox(mainWindow, {
+  dialog.showMessageBox(dialogParent, {
     type: 'info',
     title: 'Update Ready to Install',
     message: `Money Weather ${info.version} has been downloaded.`,
@@ -465,7 +468,7 @@ autoUpdater.on('update-downloaded', (info) => {
     } else {
       // "Install on Next Launch" — flag so we call quitAndInstall on next quit (silent)
       pendingInstallOnQuit = true;
-      dialog.showMessageBox(mainWindow, {
+      dialog.showMessageBox(dialogParent, {
         type: 'warning',
         title: 'Update Ready',
         message: 'The update will install silently when you close the app.',
