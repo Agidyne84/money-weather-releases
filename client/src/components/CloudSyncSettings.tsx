@@ -375,10 +375,13 @@ const CloudSyncSettings: React.FC = () => {
       }
 
     } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
+      const msg = err instanceof Error ? err.message : String(err)
+      setMessage({ type: 'error', text: msg })
+      console.error('[CloudSync] AppLock save failed:', err)
     } finally {
       setLoading(false)
       setPendingPasswordSave(false)
+      setShowAppLock(false)
     }
   }
 

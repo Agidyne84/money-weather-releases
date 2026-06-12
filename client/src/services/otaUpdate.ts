@@ -15,6 +15,7 @@ export interface OtaUpdatePlugin {
     totalBytes: number
     reason?: number
   }>
+  installUpdate(): Promise<void>
   canRequestPackageInstalls(): Promise<{ canInstall: boolean }>
   openInstallSettings(): Promise<void>
   addListener(eventName: 'otaInstallReady' | 'otaDownloadFailed' | 'otaInstallFailed', listener: (info: any) => void): Promise<{ remove: () => void }>
@@ -77,7 +78,7 @@ async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: num
       const response = await CapacitorHttp.get({
         url,
         headers: {
-          'User-Agent': 'MoneyWeather-App/1.1.21',
+          'User-Agent': 'MoneyWeather-App/1.1.22',
           'Accept': 'application/json',
           'Cache-Control': 'no-cache',
         },
@@ -259,6 +260,11 @@ export async function openInstallPermissionSettings(): Promise<void> {
 export async function downloadAndInstallUpdate(url: string): Promise<void> {
   if (!Capacitor.isNativePlatform()) return
   await OtaUpdate.downloadAndInstall({ url, fileName: 'money-weather-update.apk' })
+}
+
+export async function installUpdate(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return
+  await OtaUpdate.installUpdate()
 }
 
 export async function getDownloadStatus(): Promise<{

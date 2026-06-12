@@ -214,6 +214,19 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
   await initializeDatabase()
   const db = await getDbConnection()
 
+  // Clean up any stale transaction state from a previous crash
+  // The plugin tracks transaction state independently of SQLite
+  try {
+    await db.rollbackTransaction()
+  } catch {
+    // No plugin-managed transaction — ignore
+  }
+  try {
+    await db.execute('ROLLBACK')
+  } catch {
+    // No raw SQL transaction — ignore
+  }
+
   await db.beginTransaction()
   try {
     await db.execute('PRAGMA foreign_keys = OFF')
@@ -291,7 +304,11 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
     await db.execute('PRAGMA foreign_keys = ON')
     await db.commitTransaction()
   } catch (error) {
-    await db.rollbackTransaction()
+    try {
+      await db.rollbackTransaction()
+    } catch {
+      // ignore
+    }
     await db.execute('PRAGMA foreign_keys = ON')
     throw new Error(`Restore failed: ${(error as Error).message}`)
   }

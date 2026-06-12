@@ -7,6 +7,7 @@ import {
   openInstallPermissionSettings,
   downloadAndInstallUpdate,
   getDownloadStatus,
+  installUpdate,
   skipVersion,
   addOtaListener,
   type MobileVersionInfo,
@@ -95,6 +96,19 @@ const MobileUpdatePrompt: React.FC = () => {
         }))
       }).then((l) => otaListeners.push(l))
 
+      addOtaListener('otaInstallReady', () => {
+        console.log('[MobileUpdate] Install ready — triggering from foreground')
+        clearDownloadPolling()
+        setState((prev) => ({ ...prev, downloading: false, downloadProgress: 100 }))
+        installUpdate().catch((err) => {
+          console.error('[MobileUpdate] Install failed:', err)
+          setState((prev) => ({
+            ...prev,
+            error: err instanceof Error ? err.message : String(err),
+          }))
+        })
+      }).then((l) => otaListeners.push(l))
+
       addOtaListener('otaInstallFailed', (info) => {
         console.error('[MobileUpdate] Install failed:', info)
         clearDownloadPolling()
@@ -143,7 +157,14 @@ const MobileUpdatePrompt: React.FC = () => {
           if (status.statusText === 'success') {
             clearDownloadPolling()
             setState((prev) => ({ ...prev, downloading: false, downloadProgress: 100 }))
-            // Android install dialog will appear automatically via plugin
+            // Trigger install from foreground (fallback if broadcast event was missed)
+            installUpdate().catch((err) => {
+              console.error('[MobileUpdate] Polling-triggered install failed:', err)
+              setState((prev) => ({
+                ...prev,
+                error: err instanceof Error ? err.message : String(err),
+              }))
+            })
           } else if (status.statusText === 'failed') {
             clearDownloadPolling()
             const reasonText = status.reason ? ` (reason: ${status.reason})` : ''
