@@ -22,7 +22,7 @@ export interface OtaUpdatePlugin {
 const OtaUpdate = registerPlugin<OtaUpdatePlugin>('OtaUpdate')
 
 const VERSION_URL =
-  'https://raw.githubusercontent.com/Agidyne84/money-weather-releases/main/mobile-version.json'
+  'https://raw.githubusercontent.com/Agidyne84/money-weather-releases/master/mobile-version.json'
 
 const SKIP_VERSION_KEY = 'ota_skip_version'
 const FETCH_TIMEOUT_MS = 15000
@@ -68,7 +68,7 @@ async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: num
       const response = await CapacitorHttp.get({
         url,
         headers: {
-          'User-Agent': 'MoneyWeather-App/1.1.16',
+          'User-Agent': 'MoneyWeather-App/1.1.18',
           'Accept': 'application/json',
           'Cache-Control': 'no-cache',
         },

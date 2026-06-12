@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.17",
-    "versionCode":  10117,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.17/app-release.apk",
+    "version":  "1.1.18",
+    "versionCode":  10118,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.18/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Cloud Sync: Fixed password verification bug (Web Crypto ArrayBuffer slicing), push/pull toggle defaults to Pull and stays blue, desktop Create New uses save dialog with default filename, mobile Create New uses default name in Documents. OTA: added plain-URL fallback for cache-buster issues. Desktop: fixed installer dialog null-window bug."
+    "releaseNotes":  "OTA: Fixed update check URL (repo uses master branch, not main). Cloud Sync: Fixed AppLock biometric bypass that prevented password save; fixed large-file base64 conversion crash; mobile Create New now prompts for save path before password; securePassphrase ArrayBuffer slicing hardened."
 }

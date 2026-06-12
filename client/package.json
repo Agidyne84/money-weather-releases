@@ -1,6 +1,6 @@
 {
   "name": "budget-app-client",
-  "version": "1.1.17",
+  "version": "1.1.18",
   "description": "Money Weather - Budget App Frontend",
   "type": "module",
   "scripts": {

@@ -11,6 +11,10 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin }) => {
   const [error, setError] = useState(false)
   const [biometricReady, setBiometricReady] = useState(false)
 
+  // When PIN is required for encryption (e.g. saving cloud sync password),
+  // biometric alone is not sufficient — we need the actual PIN.
+  const pinRequired = !!onUnlockWithPin
+
   const handleBiometric = useCallback(async () => {
     const ok = await authenticateWithBiometric()
     if (ok) {
@@ -26,16 +30,16 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin }) => {
     const checkBio = async () => {
       const bioEnabled = await isBiometricEnabled()
       const bioAvailable = await isBiometricAvailable()
-      const ready = bioEnabled && bioAvailable
+      const ready = bioEnabled && bioAvailable && !pinRequired
       if (!cancelled) setBiometricReady(ready)
-      // Auto-trigger biometric prompt if enabled
+      // Auto-trigger biometric prompt if enabled (only when PIN is not required)
       if (ready && !cancelled) {
         setTimeout(() => handleBiometric(), 400)
       }
     }
     checkBio()
     return () => { cancelled = true }
-  }, [handleBiometric])
+  }, [handleBiometric, pinRequired])
 
   const handleDigit = useCallback((digit: string) => {
     if (pin.length >= 6) return

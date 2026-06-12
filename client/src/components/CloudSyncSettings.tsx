@@ -177,9 +177,15 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Mobile: create directly in app Documents with default name
-    const safeName = 'cloud-backup.budgetbackup'
-    setPendingFileName(safeName)
+    // Mobile: prompt for save path within Documents
+    const defaultPath = 'cloud-backup.budgetbackup'
+    const userPath = window.prompt(
+      'Enter the save path for your new backup (within app Documents):',
+      defaultPath
+    )
+    if (!userPath) return
+    const safePath = userPath.endsWith('.budgetbackup') ? userPath : `${userPath}.budgetbackup`
+    setPendingFileName(safePath)
     setPasswordModalContext('create-new')
     setPassword('')
     setConfirmPassword('')
@@ -255,6 +261,32 @@ const CloudSyncSettings: React.FC = () => {
     setAppLockAction('save-password')
   }
 
+  // Convert ArrayBuffer to base64 without hitting JS argument limit
+  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer)
+    let binary = ''
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i])
+    }
+    return btoa(binary)
+  }
+
+  // Ensure parent directories exist for a given file path
+  const ensureParentDirs = async (filePath: string) => {
+    const lastSlash = filePath.lastIndexOf('/')
+    if (lastSlash <= 0) return
+    const dirPath = filePath.slice(0, lastSlash)
+    try {
+      await Filesystem.mkdir({
+        path: dirPath,
+        directory: Directory.Documents,
+        recursive: true,
+      })
+    } catch {
+      // Directory may already exist
+    }
+  }
+
   const handleAppLockUnlockWithPin = async (pin: string) => {
     if (!pendingPasswordSave) return
     setLoading(true)
@@ -267,7 +299,8 @@ const CloudSyncSettings: React.FC = () => {
 
       // Verifying existing file: copy it to Documents and set path
       if (appLockAction === 'verify-file' && pendingFileName && pendingFileBuffer) {
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(pendingFileBuffer)))
+        await ensureParentDirs(pendingFileName)
+        const base64 = arrayBufferToBase64(pendingFileBuffer)
         await Filesystem.writeFile({
           path: pendingFileName,
           directory: Directory.Documents,
@@ -283,6 +316,7 @@ const CloudSyncSettings: React.FC = () => {
 
       // Creating new file: create initial backup
       if (appLockAction === 'save-password' && pendingFileName) {
+        await ensureParentDirs(pendingFileName)
         await setCloudSyncPath(pendingFileName)
         setSettings(prev => ({ ...prev, filePath: pendingFileName }))
         await createInitialBackup(pendingFileName)
