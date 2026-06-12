@@ -49,6 +49,12 @@ const CloudSyncSettings: React.FC = () => {
   const [pendingFileName, setPendingFileName] = useState<string | null>(null)
   const [verifyError, setVerifyError] = useState(false)
 
+  // Mobile folder browser for Create New
+  const [showFolderBrowser, setShowFolderBrowser] = useState(false)
+  const [folderBrowserPath, setFolderBrowserPath] = useState('')
+  const [folderBrowserItems, setFolderBrowserItems] = useState<{ name: string; type: 'directory' | 'file' }[]>([])
+  const [folderBrowserLoading, setFolderBrowserLoading] = useState(false)
+
   const loadSettings = useCallback(async () => {
     const s = await getCloudSyncSettings()
     setSettings(s)
@@ -177,20 +183,8 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Mobile: prompt for save path within Documents
-    const defaultPath = 'cloud-backup.budgetbackup'
-    const userPath = window.prompt(
-      'Enter the save path for your new backup (within app Documents):',
-      defaultPath
-    )
-    if (!userPath) return
-    const safePath = userPath.endsWith('.budgetbackup') ? userPath : `${userPath}.budgetbackup`
-    setPendingFileName(safePath)
-    setPasswordModalContext('create-new')
-    setPassword('')
-    setConfirmPassword('')
-    setVerifyError(false)
-    setShowPasswordModal(true)
+    // Mobile: open folder browser to select save location within Documents
+    await openFolderBrowser()
   }
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -285,6 +279,63 @@ const CloudSyncSettings: React.FC = () => {
     } catch {
       // Directory may already exist
     }
+  }
+
+  /* ─── Mobile Folder Browser ─── */
+  const loadFolderBrowser = async (path: string) => {
+    setFolderBrowserLoading(true)
+    try {
+      const result = await Filesystem.readdir({
+        path,
+        directory: Directory.Documents,
+      })
+      const items = result.files.map((f) => ({
+        name: f.name,
+        type: f.type === 'directory' ? ('directory' as const) : ('file' as const),
+      }))
+      // Sort: directories first, then alphabetically
+      items.sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
+        return a.name.localeCompare(b.name)
+      })
+      setFolderBrowserItems(items)
+      setFolderBrowserPath(path)
+    } catch {
+      setFolderBrowserItems([])
+      setFolderBrowserPath(path)
+    } finally {
+      setFolderBrowserLoading(false)
+    }
+  }
+
+  const openFolderBrowser = async () => {
+    setShowFolderBrowser(true)
+    setFolderBrowserPath('')
+    await loadFolderBrowser('')
+  }
+
+  const navigateIntoFolder = async (folderName: string) => {
+    const newPath = folderBrowserPath ? `${folderBrowserPath}/${folderName}` : folderName
+    await loadFolderBrowser(newPath)
+  }
+
+  const navigateUp = async () => {
+    if (!folderBrowserPath) return
+    const lastSlash = folderBrowserPath.lastIndexOf('/')
+    const parentPath = lastSlash > 0 ? folderBrowserPath.slice(0, lastSlash) : ''
+    await loadFolderBrowser(parentPath)
+  }
+
+  const selectFolderBrowserPath = () => {
+    const folderPath = folderBrowserPath ? folderBrowserPath + '/' : ''
+    const filePath = folderPath + 'cloud-backup.budgetbackup'
+    setPendingFileName(filePath)
+    setShowFolderBrowser(false)
+    setPasswordModalContext('create-new')
+    setPassword('')
+    setConfirmPassword('')
+    setVerifyError(false)
+    setShowPasswordModal(true)
   }
 
   const handleAppLockUnlockWithPin = async (pin: string) => {
@@ -571,6 +622,74 @@ const CloudSyncSettings: React.FC = () => {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Folder Browser Modal */}
+      {showFolderBrowser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Select Folder</h3>
+              <button
+                onClick={() => setShowFolderBrowser(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="text-sm text-gray-500 truncate">
+              {folderBrowserPath ? `Documents/${folderBrowserPath}` : 'Documents'}
+            </div>
+
+            {folderBrowserPath && (
+              <button
+                onClick={navigateUp}
+                className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700"
+              >
+                <span>←</span> Back
+              </button>
+            )}
+
+            <div className="flex-1 overflow-y-auto min-h-[200px] border rounded-md divide-y">
+              {folderBrowserLoading ? (
+                <div className="p-4 text-center text-sm text-gray-500">Loading...</div>
+              ) : folderBrowserItems.length === 0 ? (
+                <div className="p-4 text-center text-sm text-gray-500">Empty folder</div>
+              ) : (
+                folderBrowserItems.map((item) => (
+                  <button
+                    key={item.name}
+                    onClick={() =>
+                      item.type === 'directory' ? navigateIntoFolder(item.name) : undefined
+                    }
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50 ${
+                      item.type === 'directory' ? 'text-blue-600' : 'text-gray-600'
+                    }`}
+                  >
+                    <span>{item.type === 'directory' ? '📁' : '📄'}</span>
+                    <span className="truncate">{item.name}</span>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={selectFolderBrowserPath}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+              >
+                Save Here
+              </button>
+              <button
+                onClick={() => setShowFolderBrowser(false)}
+                className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

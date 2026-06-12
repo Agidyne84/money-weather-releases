@@ -101,8 +101,9 @@ async function mobilePull(filePath: string, passphrase?: string): Promise<{ succ
   const result = await Filesystem.readFile({
     path: filePath,
     directory: Directory.Documents,
+    encoding: 'base64' as Encoding,
   })
-  // result.data is base64 when reading binary
+  // result.data is base64 when reading with Encoding.Base64
   const base64 = result.data as string
   const binaryString = atob(base64)
   const bytes = new Uint8Array(binaryString.length)
@@ -112,9 +113,17 @@ async function mobilePull(filePath: string, passphrase?: string): Promise<{ succ
   return await importMobileBackup(bytes.buffer, passphrase)
 }
 
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
+
 async function mobilePush(filePath: string, passphrase?: string): Promise<{ success: boolean; modifiedAt: string; size: number }> {
   const data = await exportMobileBackup(passphrase)
-  const base64 = btoa(String.fromCharCode(...data))
+  const base64 = uint8ToBase64(data)
   await Filesystem.writeFile({
     path: filePath,
     directory: Directory.Documents,
