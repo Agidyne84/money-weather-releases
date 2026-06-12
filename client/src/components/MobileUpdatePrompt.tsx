@@ -8,6 +8,7 @@ import {
   downloadAndInstallUpdate,
   getDownloadStatus,
   skipVersion,
+  addOtaListener,
   type MobileVersionInfo,
 } from '../services/otaUpdate'
 
@@ -35,6 +36,14 @@ const MobileUpdatePrompt: React.FC = () => {
     error: null,
   })
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const downloadIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const clearDownloadPolling = () => {
+    if (downloadIntervalRef.current) {
+      clearInterval(downloadIntervalRef.current)
+      downloadIntervalRef.current = null
+    }
+  }
 
   const check = useCallback(async (isRetry = false) => {
     console.log('[MobileUpdate] Checking for updates...', isRetry ? '(retry)' : '')
@@ -62,6 +71,8 @@ const MobileUpdatePrompt: React.FC = () => {
 
     // Re-check when app comes back to foreground
     let appStateListener: { remove: () => void } | null = null
+    const otaListeners: { remove: () => void }[] = []
+
     if (Capacitor.isNativePlatform()) {
       App.addListener('appStateChange', ({ isActive }) => {
         if (isActive) {
@@ -72,12 +83,35 @@ const MobileUpdatePrompt: React.FC = () => {
       }).then((listener) => {
         appStateListener = listener
       })
+
+      // Listen for OTA plugin events
+      addOtaListener('otaDownloadFailed', (info) => {
+        console.error('[MobileUpdate] Download failed:', info)
+        clearDownloadPolling()
+        setState((prev) => ({
+          ...prev,
+          downloading: false,
+          error: info?.error || 'Download failed. Please try again.',
+        }))
+      }).then((l) => otaListeners.push(l))
+
+      addOtaListener('otaInstallFailed', (info) => {
+        console.error('[MobileUpdate] Install failed:', info)
+        clearDownloadPolling()
+        setState((prev) => ({
+          ...prev,
+          downloading: false,
+          error: info?.error || 'Install failed. Please try again.',
+        }))
+      }).then((l) => otaListeners.push(l))
     }
 
     return () => {
       clearTimeout(initialTimeout)
       if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current)
       if (appStateListener) appStateListener.remove()
+      clearDownloadPolling()
+      otaListeners.forEach((l) => l.remove())
     }
   }, [check])
 
@@ -97,7 +131,8 @@ const MobileUpdatePrompt: React.FC = () => {
       await downloadAndInstallUpdate(state.info.downloadUrl)
 
       // Poll download status
-      const interval = setInterval(async () => {
+      clearDownloadPolling()
+      downloadIntervalRef.current = setInterval(async () => {
         try {
           const status = await getDownloadStatus()
           if (status.totalBytes > 0) {
@@ -106,15 +141,16 @@ const MobileUpdatePrompt: React.FC = () => {
           }
 
           if (status.statusText === 'success') {
-            clearInterval(interval)
+            clearDownloadPolling()
             setState((prev) => ({ ...prev, downloading: false, downloadProgress: 100 }))
-            // Android install dialog will appear automatically
+            // Android install dialog will appear automatically via plugin
           } else if (status.statusText === 'failed') {
-            clearInterval(interval)
+            clearDownloadPolling()
+            const reasonText = status.reason ? ` (reason: ${status.reason})` : ''
             setState((prev) => ({
               ...prev,
               downloading: false,
-              error: 'Download failed. Please try again.',
+              error: `Download failed${reasonText}. Please try again.`,
             }))
           }
         } catch {
@@ -123,7 +159,7 @@ const MobileUpdatePrompt: React.FC = () => {
       }, POLL_INTERVAL)
 
       // Safety: stop polling after 5 minutes
-      setTimeout(() => clearInterval(interval), 5 * 60 * 1000)
+      setTimeout(() => clearDownloadPolling(), 5 * 60 * 1000)
     } catch (err) {
       setState((prev) => ({
         ...prev,

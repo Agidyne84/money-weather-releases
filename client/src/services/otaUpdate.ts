@@ -17,9 +17,18 @@ export interface OtaUpdatePlugin {
   }>
   canRequestPackageInstalls(): Promise<{ canInstall: boolean }>
   openInstallSettings(): Promise<void>
+  addListener(eventName: 'otaInstallReady' | 'otaDownloadFailed' | 'otaInstallFailed', listener: (info: any) => void): Promise<{ remove: () => void }>
+  removeAllListeners(): Promise<void>
 }
 
 const OtaUpdate = registerPlugin<OtaUpdatePlugin>('OtaUpdate')
+
+export function addOtaListener(
+  event: 'otaInstallReady' | 'otaDownloadFailed' | 'otaInstallFailed',
+  callback: (info: any) => void
+): Promise<{ remove: () => void }> {
+  return OtaUpdate.addListener(event, callback)
+}
 
 const VERSION_URL =
   'https://raw.githubusercontent.com/Agidyne84/money-weather-releases/master/mobile-version.json'
@@ -68,7 +77,7 @@ async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: num
       const response = await CapacitorHttp.get({
         url,
         headers: {
-          'User-Agent': 'MoneyWeather-App/1.1.19',
+          'User-Agent': 'MoneyWeather-App/1.1.20',
           'Accept': 'application/json',
           'Cache-Control': 'no-cache',
         },
@@ -257,6 +266,7 @@ export async function getDownloadStatus(): Promise<{
   statusText: string
   bytesDownloaded: number
   totalBytes: number
+  reason?: number
 }> {
   if (!Capacitor.isNativePlatform()) {
     return { status: -1, statusText: 'not-native', bytesDownloaded: 0, totalBytes: 0 }

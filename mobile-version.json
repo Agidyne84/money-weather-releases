@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.19",
-    "versionCode":  10119,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.19/app-release.apk",
+    "version":  "1.1.20",
+    "versionCode":  10120,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.20/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Cloud Sync: Fixed mobile Pull JSON parse error by adding explicit base64 encoding to Filesystem.readFile. Fixed mobile Push large-file crash with loop-based base64 conversion. Mobile Create New now has a proper folder browser with navigate-into, back, and save-here buttons. Desktop installer dialog uses null-safe window reference."
+    "releaseNotes":  "OTA Update: Fixed APK install failure by adding external-files-path to FileProvider config and adding download verification + error handling to the OtaUpdate plugin. Install failures now show clear error messages instead of silently doing nothing."
 }
