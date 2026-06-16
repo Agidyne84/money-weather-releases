@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.22",
-    "versionCode":  10122,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.22/app-release.apk",
+    "version":  "1.1.23",
+    "versionCode":  10123,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.23/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Fixed OTA APK install by moving installApk out of BroadcastReceiver into a foreground plugin method. Fixed SQLite 'no current transaction' error by reverting to plugin-managed transactions with pre-emptive cleanup for stale transactions."
+    "releaseNotes":  "Fixed 'Already in transaction' SQLite error during Pull from Cloud by closing and reopening the database connection before import, guaranteeing a clean native transaction state."
 }

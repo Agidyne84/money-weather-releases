@@ -2,7 +2,7 @@
 // Uses Web Crypto API for AES-256-GCM + PBKDF2
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
-import { getDbConnection, initializeDatabase } from '../services/database/mobileDb'
+import { getDbConnection, initializeDatabase, closeDatabase } from '../services/database/mobileDb'
 
 // Binary file format constants (must match server/src/backup.ts exactly)
 const MAGIC = new Uint8Array([0x42, 0x41, 0x50, 0x4B]) // 'BAPK'
@@ -212,20 +212,17 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
   }
 
   await initializeDatabase()
-  const db = await getDbConnection()
+  let db = await getDbConnection()
 
-  // Clean up any stale transaction state from a previous crash
-  // The plugin tracks transaction state independently of SQLite
+  // If a previous crash left the plugin's native transaction flag stuck,
+  // rollbackTransaction() swallows the error but does NOT clear the flag.
+  // The only way to guarantee a clean state is to close and reopen the connection.
   try {
-    await db.rollbackTransaction()
+    await closeDatabase()
   } catch {
-    // No plugin-managed transaction — ignore
+    // ignore close errors
   }
-  try {
-    await db.execute('ROLLBACK')
-  } catch {
-    // No raw SQL transaction — ignore
-  }
+  db = await getDbConnection()
 
   await db.beginTransaction()
   try {
