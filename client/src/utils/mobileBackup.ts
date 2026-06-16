@@ -211,20 +211,26 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
     throw new Error('Invalid backup file: schema validation failed')
   }
 
+  // Close any existing connection first to guarantee a completely fresh native state.
+  // initializeDatabase() will create a new connection.
+  await closeDatabase()
   await initializeDatabase()
   let db = await getDbConnection()
 
-  // If a previous crash left the plugin's native transaction flag stuck,
-  // rollbackTransaction() swallows the error but does NOT clear the flag.
-  // The only way to guarantee a clean state is to close and reopen the connection.
+  // Safety: if the plugin's transaction flag is still stuck, close and reconnect once more.
   try {
-    await closeDatabase()
-  } catch {
-    // ignore close errors
+    await db.beginTransaction()
+  } catch (err) {
+    const msg = String(err)
+    if (msg.includes('already in transaction') || msg.includes('Already in transaction')) {
+      console.warn('[importMobileBackup] beginTransaction failed, forcing reconnect:', msg)
+      await closeDatabase()
+      db = await getDbConnection()
+      await db.beginTransaction()
+    } else {
+      throw err
+    }
   }
-  db = await getDbConnection()
-
-  await db.beginTransaction()
   try {
     await db.execute('PRAGMA foreign_keys = OFF')
     await db.execute('DELETE FROM historical_transactions')

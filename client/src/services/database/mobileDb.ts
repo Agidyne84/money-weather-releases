@@ -234,11 +234,22 @@ async function ensureColumn(
 
 export async function closeDatabase(): Promise<void> {
   if (dbConnection) {
-    await dbConnection.close()
+    try {
+      // Try to clear any stuck plugin transaction state before closing
+      try { await dbConnection.execute('ROLLBACK') } catch {}
+      try { await dbConnection.rollbackTransaction() } catch {}
+      await dbConnection.close()
+    } catch (err) {
+      console.warn('[Mobile DB] dbConnection.close() failed:', err)
+    }
     dbConnection = null
   }
   if (sqliteConnection) {
-    await sqliteConnection.closeConnection(DB_NAME, false)
+    try {
+      await sqliteConnection.closeConnection(DB_NAME, false)
+    } catch (err) {
+      console.warn('[Mobile DB] closeConnection failed:', err)
+    }
     sqliteConnection = null
   }
 }
