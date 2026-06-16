@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.23",
-    "versionCode":  10123,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.23/app-release.apk",
+    "version":  "1.1.24",
+    "versionCode":  10124,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.24/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Fixed 'Already in transaction' SQLite error during Pull from Cloud by closing and reopening the database connection before import, guaranteeing a clean native transaction state."
+    "releaseNotes":  "Fixed OTA install by using deterministic APK path instead of volatile instance state. Fixed cloud sync password prompt by adding PIN unlock flow when session passphrase is cleared after app restart."
 }

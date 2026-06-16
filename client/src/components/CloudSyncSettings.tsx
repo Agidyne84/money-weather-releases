@@ -12,6 +12,8 @@ import {
 import {
   hasStoredPassphrase,
   storePassphrase,
+  getSessionPassphrase,
+  unlockPassphrase,
 } from '../services/securePassphrase'
 import { verifyBackupPassword } from '../utils/mobileBackup'
 import AppLock from './AppLock'
@@ -39,7 +41,7 @@ const CloudSyncSettings: React.FC = () => {
   const [passwordModalContext, setPasswordModalContext] = useState<PasswordModalContext>('create')
   const [pendingPasswordSave, setPendingPasswordSave] = useState(false)
   const [showAppLock, setShowAppLock] = useState(false)
-  const [appLockAction, setAppLockAction] = useState<'save-password' | 'verify-file'>('save-password')
+  const [appLockAction, setAppLockAction] = useState<'save-password' | 'verify-file' | 'unlock-sync'>('save-password')
   const [syncMode, setSyncMode] = useState<SyncMode>('pull')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [fileStatus, setFileStatus] = useState<string>('')
@@ -342,6 +344,18 @@ const CloudSyncSettings: React.FC = () => {
     if (!pendingPasswordSave) return
     setLoading(true)
     try {
+      // Unlocking passphrase for sync after app restart
+      if (appLockAction === 'unlock-sync') {
+        const ok = await unlockPassphrase(pin)
+        if (!ok) {
+          setMessage({ type: 'error', text: 'Invalid PIN. Could not unlock cloud sync password.' })
+          return
+        }
+        setMessage({ type: 'success', text: 'Cloud sync password unlocked.' })
+        await doSync()
+        return
+      }
+
       await storePassphrase(pin, password)
       setHasPassword(true)
       setPassword('')
@@ -388,6 +402,20 @@ const CloudSyncSettings: React.FC = () => {
   const doSync = async () => {
     if (!settings.filePath) {
       setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
+      return
+    }
+
+    // Session passphrase is volatile JS memory — if the app was restarted,
+    // we need to prompt for the PIN to decrypt it again.
+    if (!getSessionPassphrase()) {
+      const hasStored = await hasStoredPassphrase()
+      if (hasStored) {
+        setAppLockAction('unlock-sync')
+        setPendingPasswordSave(true)
+        setShowAppLock(true)
+        return
+      }
+      setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
       return
     }
 
