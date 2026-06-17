@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.33",
-    "versionCode":  10133,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.33/app-release.apk",
+    "version":  "1.1.34",
+    "versionCode":  10134,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.34/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Bug fixes: Frequency controls on Add Transaction no longer overflow on mobile. History transaction source labels now correctly show 'Recurring' for moved transactions and '(deleted)' only for suppressed rows. Dashboard Account Balances bar chart bars no longer overlap and can scroll horizontally when many accounts are present."
+    "releaseNotes":  "Hotfix: Fixed Dashboard Account Balances bar chart bars not rendering after the v1.1.33 overlap fix. Bars now display correctly with horizontal scroll for many accounts. Also includes v1.1.33 fixes for frequency overflow and history labels."
 }

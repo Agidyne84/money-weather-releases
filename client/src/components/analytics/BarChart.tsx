@@ -62,7 +62,7 @@ const BarChart: React.FC<BarChartProps> = ({
         </svg>
 
         {/* Bars */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto h-full">
           <div className="relative h-full flex items-end px-2 pt-6 pb-6 gap-2" style={{ minWidth: `${data.length * 72}px` }}>
             {data.map((item, index) => {
               const barColor = item.color || '#3B82F6'
