@@ -239,6 +239,68 @@ const Budget: React.FC = () => {
     })
   }
 
+  const renderMobileCategoryCards = (type: 'income' | 'expense') => {
+    const colorClass = type === 'income' ? 'text-green-600' : 'text-red-600'
+    const sign = type === 'income' ? '+' : '-'
+    const filteredParents = categories
+      .filter(cat => !cat.parentId && getParentMonthlyAmount(cat.id, type) > 0)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+
+    return filteredParents.map(parent => {
+      const parentTotal = getParentMonthlyAmount(parent.id, type)
+      const isExpanded = expandedParents.has(parent.id)
+      const childCategories = categories
+        .filter(cat => cat.parentId === parent.id && getCategoryMonthlyAmount(cat.id, type) > 0)
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      const parentHasChildren = childCategories.length > 0
+
+      return (
+        <div key={parent.id} className="bg-white border border-gray-200 rounded-lg p-4 mb-3 shadow-sm">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-2 min-w-0">
+              {parentHasChildren ? (
+                <button
+                  type="button"
+                  onClick={() => toggleParentExpanded(parent.id)}
+                  className="text-gray-500 hover:text-gray-700 focus:outline-none w-5 text-xs flex-shrink-0"
+                >
+                  {isExpanded ? '▼' : '▶'}
+                </button>
+              ) : (
+                <span className="w-5 flex-shrink-0"></span>
+              )}
+              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: parent.color }} />
+              <span className="font-medium text-gray-900 truncate">{parent.name}</span>
+            </div>
+            <div className="text-right flex-shrink-0 ml-2">
+              <span className={`font-medium ${colorClass}`}>{sign}${parentTotal.toFixed(2)}</span>
+              <span className="text-xs text-gray-400 ml-1">/mo</span>
+            </div>
+          </div>
+          {isExpanded && childCategories.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+              {childCategories.map(child => {
+                const childTotal = getCategoryMonthlyAmount(child.id, type)
+                return (
+                  <div key={child.id} className="flex justify-between items-center pl-6">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: child.color }} />
+                      <span className="text-sm text-gray-700 truncate">{child.name}</span>
+                    </div>
+                    <span className={`text-sm ${colorClass} flex-shrink-0 ml-2`}>{sign}${childTotal.toFixed(2)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          <div className="mt-2 text-right text-xs text-gray-400">
+            Yearly: {sign}${(parentTotal * 12).toFixed(2)}
+          </div>
+        </div>
+      )
+    })
+  }
+
   const weekDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
   const weekDayShortNames = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -1302,7 +1364,7 @@ const Budget: React.FC = () => {
                   </button>
                 </div>
               </div>
-              <div className="overflow-x-auto">
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="border-b-2 border-gray-200">
@@ -1391,6 +1453,25 @@ const Budget: React.FC = () => {
                   <p className="text-gray-500 text-sm py-4">No income categories found</p>
                 )}
               </div>
+              <div className="md:hidden">
+                {renderMobileCategoryCards('income')}
+                {categories.filter(cat => !cat.parentId && getParentMonthlyAmount(cat.id, 'income') > 0).length === 0 && (
+                  <p className="text-gray-500 text-sm py-4">No income categories found</p>
+                )}
+                {/* Income Total Card */}
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-gray-900">Income Total</span>
+                    <div className="text-right">
+                      <span className="font-bold text-green-700">+${monthlyIncome.toFixed(2)}</span>
+                      <span className="text-xs text-gray-500 ml-1">/mo</span>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-gray-500 mt-1">
+                    Yearly: +${(monthlyIncome * 12).toFixed(2)}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Expense Categories Table */}
@@ -1414,7 +1495,7 @@ const Budget: React.FC = () => {
                   </button>
                 </div>
               </div>
-              <div className="overflow-x-auto">
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="border-b-2 border-gray-200">
@@ -1502,6 +1583,25 @@ const Budget: React.FC = () => {
                 {categories.filter(cat => !cat.parentId && getParentMonthlyAmount(cat.id, 'expense') > 0).length === 0 && (
                   <p className="text-gray-500 text-sm py-4">No expense categories found</p>
                 )}
+              </div>
+              <div className="md:hidden">
+                {renderMobileCategoryCards('expense')}
+                {categories.filter(cat => !cat.parentId && getParentMonthlyAmount(cat.id, 'expense') > 0).length === 0 && (
+                  <p className="text-gray-500 text-sm py-4">No expense categories found</p>
+                )}
+                {/* Expense Total Card */}
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-gray-900">Expense Total</span>
+                    <div className="text-right">
+                      <span className="font-bold text-red-700">-${monthlyExpenses.toFixed(2)}</span>
+                      <span className="text-xs text-gray-500 ml-1">/mo</span>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-gray-500 mt-1">
+                    Yearly: -${(monthlyExpenses * 12).toFixed(2)}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -2816,43 +2916,81 @@ const Budget: React.FC = () => {
                     No category data available. Set up budget items or import history to see performance.
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-200">
-                          <th className="text-left py-2 font-medium text-gray-600">Category</th>
-                          <th className="text-right py-2 font-medium text-gray-600 whitespace-nowrap">This Mo.</th>
-                          <th className="text-right py-2 font-medium text-gray-600 whitespace-nowrap">Last Mo.</th>
-                          <th className="text-right py-2 font-medium text-gray-600 whitespace-nowrap">3-Mo. Avg</th>
-                          <th className="text-right py-2 font-medium text-gray-600 whitespace-nowrap">Budgeted</th>
-                          <th className="text-center py-2 font-medium text-gray-600">Trend</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {getCategoryPerformanceData().map(row => (
-                          <tr key={row.category} className="hover:bg-gray-50">
-                            <td className="py-2">
-                              <div className="flex items-center gap-2">
-                                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: row.color }} />
-                                <span className="font-medium text-gray-900 truncate">{row.category}</span>
-                              </div>
-                            </td>
-                            <td className={`py-2 text-right font-mono whitespace-nowrap ${row.budgeted > 0 && row.thisMonth > row.budgeted ? 'text-red-600' : 'text-gray-900'}`}>
-                              ${row.thisMonth.toFixed(0)}
-                            </td>
-                            <td className="py-2 text-right font-mono text-gray-500 whitespace-nowrap">${row.lastMonth.toFixed(0)}</td>
-                            <td className="py-2 text-right font-mono text-gray-500 whitespace-nowrap">${row.threeMonthAvg.toFixed(0)}</td>
-                            <td className="py-2 text-right font-mono text-blue-600 whitespace-nowrap">${row.budgeted.toFixed(0)}</td>
-                            <td className="py-2 text-center">
-                              <span className={`text-base ${row.trend === 'up' ? 'text-red-500' : row.trend === 'down' ? 'text-green-500' : 'text-gray-400'}`}>
-                                {row.trend === 'up' ? '↑' : row.trend === 'down' ? '↓' : '→'}
-                              </span>
-                            </td>
+                  <>
+                    <div className="hidden md:block overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-200">
+                            <th className="text-left py-2 font-medium text-gray-600">Category</th>
+                            <th className="text-right py-2 font-medium text-gray-600 whitespace-nowrap">This Mo.</th>
+                            <th className="text-right py-2 font-medium text-gray-600 whitespace-nowrap">Last Mo.</th>
+                            <th className="text-right py-2 font-medium text-gray-600 whitespace-nowrap">3-Mo. Avg</th>
+                            <th className="text-right py-2 font-medium text-gray-600 whitespace-nowrap">Budgeted</th>
+                            <th className="text-center py-2 font-medium text-gray-600">Trend</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {getCategoryPerformanceData().map(row => (
+                            <tr key={row.category} className="hover:bg-gray-50">
+                              <td className="py-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: row.color }} />
+                                  <span className="font-medium text-gray-900 truncate">{row.category}</span>
+                                </div>
+                              </td>
+                              <td className={`py-2 text-right font-mono whitespace-nowrap ${row.budgeted > 0 && row.thisMonth > row.budgeted ? 'text-red-600' : 'text-gray-900'}`}>
+                                ${row.thisMonth.toFixed(0)}
+                              </td>
+                              <td className="py-2 text-right font-mono text-gray-500 whitespace-nowrap">${row.lastMonth.toFixed(0)}</td>
+                              <td className="py-2 text-right font-mono text-gray-500 whitespace-nowrap">${row.threeMonthAvg.toFixed(0)}</td>
+                              <td className="py-2 text-right font-mono text-blue-600 whitespace-nowrap">${row.budgeted.toFixed(0)}</td>
+                              <td className="py-2 text-center">
+                                <span className={`text-base ${row.trend === 'up' ? 'text-red-500' : row.trend === 'down' ? 'text-green-500' : 'text-gray-400'}`}>
+                                  {row.trend === 'up' ? '↑' : row.trend === 'down' ? '↓' : '→'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {/* Mobile cards for Category Performance */}
+                    <div className="md:hidden space-y-2">
+                      {getCategoryPerformanceData().map(row => (
+                        <div key={row.category} className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+                          <div className="flex justify-between items-center mb-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: row.color }} />
+                              <span className="font-medium text-gray-900 truncate">{row.category}</span>
+                            </div>
+                            <span className={`text-base flex-shrink-0 ml-1 ${row.trend === 'up' ? 'text-red-500' : row.trend === 'down' ? 'text-green-500' : 'text-gray-400'}`}>
+                              {row.trend === 'up' ? '↑' : row.trend === 'down' ? '↓' : '→'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">This Mo.</span>
+                              <span className={`font-mono ${row.budgeted > 0 && row.thisMonth > row.budgeted ? 'text-red-600' : 'text-gray-900'}`}>
+                                ${row.thisMonth.toFixed(0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">Last Mo.</span>
+                              <span className="font-mono text-gray-500">${row.lastMonth.toFixed(0)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">3-Mo. Avg</span>
+                              <span className="font-mono text-gray-500">${row.threeMonthAvg.toFixed(0)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">Budgeted</span>
+                              <span className="font-mono text-blue-600">${row.budgeted.toFixed(0)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
             </div>

@@ -207,8 +207,8 @@ const BudgetVsActualWidget: React.FC<BudgetVsActualWidgetProps> = ({
             )}
           </div>
 
-          {/* Category table */}
-          <div className="overflow-x-auto">
+          {/* Category table — desktop */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200">
@@ -257,6 +257,53 @@ const BudgetVsActualWidget: React.FC<BudgetVsActualWidgetProps> = ({
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile cards for Budget vs Actual */}
+          <div className="md:hidden space-y-2">
+            {displayTable.map(item => {
+              const variance = item.actual - item.budget
+              const pct = item.budget > 0 ? (variance / item.budget) * 100 : 0
+              const isOver = variance > 0
+              const isGood = item.isCredit ? isOver : !isOver
+              const varColor = isGood ? 'text-green-600' : 'text-red-600'
+              const varLabel = item.isCredit
+                ? (isOver ? 'Above target' : 'Below target')
+                : (isOver ? 'Over' : 'Under')
+              return (
+                <div
+                  key={item.category}
+                  className={`bg-white border border-gray-200 rounded-lg p-3 shadow-sm ${canDrillDown || canLeaf ? 'cursor-pointer active:bg-blue-50' : ''}`}
+                  onClick={() => handleBarClick(item.category)}
+                >
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+                      <span className="font-medium text-gray-900 truncate">{item.category}</span>
+                      {item.isCredit && <span className="text-xs text-blue-500 bg-blue-50 px-1 rounded flex-shrink-0">credit</span>}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Budgeted</span>
+                      <span className="font-mono text-blue-600">{fmt(item.budget)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Actual</span>
+                      <span className="font-mono text-gray-900">{fmt(item.actual)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Variance</span>
+                      <span className={`font-mono ${varColor}`}>{isOver ? '+' : ''}{fmt(variance)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Status</span>
+                      <span className={`font-mono ${varColor}`}>{Math.abs(pct).toFixed(1)}% {varLabel}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
 
           {data.length > TABLE_DEFAULT && onToggleExpand && (
