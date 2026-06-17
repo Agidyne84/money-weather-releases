@@ -413,7 +413,7 @@ const History: React.FC = () => {
                     {row.categoryName || categoryName(row.categoryId)}
                     {' · '}
                     <span className="text-gray-400">
-                      {row.sourceTransactionName || (row.transactionId ? '(deleted)' : 'Manual')}
+                      {row.sourceTransactionName || (row.isSuppressed ? '(deleted)' : row.transactionId ? 'Recurring' : 'Manual')}
                     </span>
                   </p>
                   <div className="flex flex-wrap gap-1 mt-1">
@@ -889,7 +889,7 @@ const History: React.FC = () => {
                                   {row.categoryName || categoryName(row.categoryId)}
                                   {' · '}
                                   <span className="text-gray-400">
-                                    {row.sourceTransactionName || (row.transactionId ? '(deleted)' : 'Manual')}
+                                    {row.sourceTransactionName || (row.isSuppressed ? '(deleted)' : row.transactionId ? 'Recurring' : 'Manual')}
                                   </span>
                                   {row.isSuppressed && (
                                     <span

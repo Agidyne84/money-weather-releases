@@ -62,23 +62,24 @@ const BarChart: React.FC<BarChartProps> = ({
         </svg>
 
         {/* Bars */}
-        <div className="relative h-full flex items-end px-2 pt-6 pb-6 gap-2">
-          {data.map((item, index) => {
-            const barColor = item.color || '#3B82F6'
+        <div className="overflow-x-auto">
+          <div className="relative h-full flex items-end px-2 pt-6 pb-6 gap-2" style={{ minWidth: `${data.length * 72}px` }}>
+            {data.map((item, index) => {
+              const barColor = item.color || '#3B82F6'
 
-            let barHeightPercent: number
-            let bottomOffsetPercent: number
+              let barHeightPercent: number
+              let bottomOffsetPercent: number
 
-            if (item.value >= 0) {
-              barHeightPercent = (item.value / effectiveRange) * 100
-              bottomOffsetPercent = zeroLinePercent
-            } else {
-              barHeightPercent = (Math.abs(item.value) / effectiveRange) * 100
-              bottomOffsetPercent = zeroLinePercent - barHeightPercent
-            }
+              if (item.value >= 0) {
+                barHeightPercent = (item.value / effectiveRange) * 100
+                bottomOffsetPercent = zeroLinePercent
+              } else {
+                barHeightPercent = (Math.abs(item.value) / effectiveRange) * 100
+                bottomOffsetPercent = zeroLinePercent - barHeightPercent
+              }
 
-            return (
-              <div key={index} className="flex flex-col items-center flex-1 min-w-0 h-full relative">
+              return (
+                <div key={index} className="flex flex-col items-center flex-shrink-0 w-16 h-full relative">
                 {/* Value label */}
                 <span className={`text-xs font-medium mb-1 w-full text-center ${item.value >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
                   ${item.value.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -101,6 +102,7 @@ const BarChart: React.FC<BarChartProps> = ({
               </div>
             )
           })}
+          </div>
         </div>
       </div>
     </div>

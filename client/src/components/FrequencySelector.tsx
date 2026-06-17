@@ -531,7 +531,7 @@ const FrequencySelector: React.FC<FrequencySelectorProps> = ({ value, onChange, 
     <>
       <div className="space-y-4">
         {showSimpleControls ? (
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span>Every</span>
             <input
               type="number"
@@ -541,7 +541,7 @@ const FrequencySelector: React.FC<FrequencySelectorProps> = ({ value, onChange, 
               onChange={(e) => onChange({ ...value, value: parseInt(e.target.value) || 1, customPattern: undefined })}
             />
             <select
-              className="form-input"
+              className="form-input w-32 sm:w-auto"
               value={value.unit}
               onChange={(e) => onChange({ ...value, unit: e.target.value as any, customPattern: undefined })}
             >

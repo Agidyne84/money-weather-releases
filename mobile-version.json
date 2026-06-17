@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.32",
-    "versionCode":  10132,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.32/app-release.apk",
+    "version":  "1.1.33",
+    "versionCode":  10133,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.33/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Redesigned History page mobile view. The history transactions table now uses a stacked card layout on small screens, with date + amount prominently displayed, description with color dot, type/account/category badges, and status labels (Deleted, Bank, Edited). Inline editing with Account, Transfer, Category, and Type selectors is preserved within each card. Desktop table unchanged."
+    "releaseNotes":  "Bug fixes: Frequency controls on Add Transaction no longer overflow on mobile. History transaction source labels now correctly show 'Recurring' for moved transactions and '(deleted)' only for suppressed rows. Dashboard Account Balances bar chart bars no longer overlap and can scroll horizontally when many accounts are present."
 }
