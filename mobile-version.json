@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.30",
-    "versionCode":  10130,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.30/app-release.apk",
+    "version":  "1.1.31",
+    "versionCode":  10131,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.31/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Redesigned Budget by Category and Budget Analytics mobile views. Category tables and performance tables now use clean stacked card layouts on small screens, with color dots, amounts in 2-column grids, and expandable parent/child category cards. Desktop tables remain unchanged."
+    "releaseNotes":  "Redesigned Forecast page mobile view. The forecast transactions table now uses a stacked card layout on small screens, with date + amount prominently displayed, description with color dot and type badges, and running account balances in a clean 2-column grid. Inline editing is preserved within each card. Desktop table unchanged."
 }

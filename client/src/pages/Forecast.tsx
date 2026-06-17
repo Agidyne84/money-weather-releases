@@ -626,6 +626,231 @@ const Forecast: React.FC = () => {
     })
     return result
   }, [transactions, accounts])
+
+  const renderMobileForecastCards = () => {
+    const allAccountBalances = forecasts.length > 0
+      ? forecasts[forecasts.length - 1].accountBalances
+      : []
+    const displayAccounts = accounts.filter(a => visibleAccountIds.includes(a.id))
+    const displayBalances = (displayAccounts.length > 0 ? displayAccounts : accounts).map(a => ({
+      accountId: a.id,
+      accountName: a.name,
+      balance: a.currentBalance
+    }))
+
+    return transactions.slice(0, displayedTransactions).map((transaction) => {
+      const isEditing = editingTransactions.has(transaction.id)
+      const buf = editForms[transaction.id]
+      const rowTotals = accountRunningTotalsByRow[transaction.id] || {}
+      const originalTx = originalTransactions.find(tx => tx.id === transaction.transactionId)
+      const cardBg = isEditing
+        ? 'bg-blue-50 border-blue-200'
+        : transaction.isTransfer
+          ? 'bg-yellow-50 border-yellow-200'
+          : transaction.type === 'income'
+            ? 'bg-green-50 border-green-200'
+            : transaction.type === 'administrative'
+              ? 'bg-gray-100 border-gray-200'
+              : 'bg-white border-gray-200'
+
+      return (
+        <div key={transaction.id} className={`border rounded-lg p-3 shadow-sm ${cardBg}`}>
+          {/* Header row: checkbox + date + amount */}
+          <div className="flex justify-between items-center mb-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <input
+                type="checkbox"
+                className="rounded flex-shrink-0"
+                checked={selectedTransactions.includes(transaction.id)}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedTransactions([...selectedTransactions, transaction.id])
+                  } else {
+                    setSelectedTransactions(selectedTransactions.filter((id: string) => id !== transaction.id))
+                  }
+                }}
+              />
+              {isEditing && buf ? (
+                <input
+                  type="date"
+                  value={buf.date}
+                  onChange={(e) => updateEditField(transaction.id, { date: e.target.value })}
+                  className="input-field text-sm w-full"
+                />
+              ) : (
+                <span className="text-sm text-gray-900">
+                  {formatDateForDisplay(transaction.date)}
+                </span>
+              )}
+            </div>
+            {isEditing && buf ? (
+              <input
+                type="number"
+                step="0.01"
+                value={buf.amount}
+                onChange={(e) => updateEditField(transaction.id, { amount: e.target.value })}
+                className="input-field text-sm w-28 text-right"
+              />
+            ) : (
+              <span className={`text-sm font-medium flex-shrink-0 ml-2 ${transaction.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {transaction.amount >= 0 ? '+' : ''}${Math.abs(transaction.amount).toFixed(2)}
+              </span>
+            )}
+          </div>
+
+          {/* Description */}
+          <div className="flex items-center gap-2 min-w-0 mb-2">
+            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: transaction.categoryColor }} />
+            <div className="min-w-0 flex-1">
+              {isEditing && buf ? (
+                <input
+                  type="text"
+                  value={buf.description}
+                  onChange={(e) => updateEditField(transaction.id, { description: e.target.value })}
+                  className="input-field text-sm w-full"
+                />
+              ) : (
+                <>
+                  <p className="font-medium text-gray-900 text-sm truncate">
+                    {transaction.description}
+                    {transaction.isEdited && (
+                      <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                        Edited
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {transaction.type === 'income' ? 'Income' : transaction.type === 'expense' ? 'Expense' : 'Administrative'} • {!transaction.transactionId ? 'Manual' : 'Recurring'}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Account balances grid */}
+          {!isEditing && (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
+              {displayBalances.map(a => {
+                const isAffected = transaction.accountId === a.accountId || (transaction.isTransfer && transaction.transferToAccountId === a.accountId)
+                return (
+                  <div key={a.accountId} className="flex justify-between">
+                    <span className={isAffected ? 'text-gray-700 font-medium' : 'text-gray-400'}>{a.accountName}</span>
+                    <span className={`font-mono ${isAffected ? 'text-gray-900' : 'text-gray-300'}`}>
+                      ${(rowTotals[a.accountId] ?? a.balance).toFixed(2)}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Edit controls */}
+          {isEditing && buf && (
+            <div className="space-y-2 mt-2 pt-2 border-t border-blue-200">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="flex flex-col">
+                  <label className="text-xs text-gray-600 mb-1">Account</label>
+                  <select
+                    value={buf.accountId}
+                    onChange={(e) => updateEditField(transaction.id, { accountId: e.target.value })}
+                    className="input-field text-sm"
+                  >
+                    <option value="">Select Account</option>
+                    {allAccountBalances.map(a => (
+                      <option key={a.accountId} value={a.accountId}>{a.accountName}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-xs text-gray-600 mb-1">Start date</label>
+                  <input
+                    type="date"
+                    value={buf.startDate}
+                    onChange={(e) => updateEditField(transaction.id, { startDate: e.target.value })}
+                    className="input-field text-sm"
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-xs text-gray-600 mb-1">Frequency</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      value={buf.frequencyValue}
+                      onChange={(e) => updateEditField(transaction.id, { frequencyValue: e.target.value })}
+                      className="input-field text-sm w-20"
+                      placeholder="Every"
+                    />
+                    <select
+                      value={buf.frequencyUnit}
+                      onChange={(e) => updateEditField(transaction.id, { frequencyUnit: e.target.value })}
+                      className="input-field text-sm flex-1"
+                    >
+                      <option value="days">Days</option>
+                      <option value="weeks">Weeks</option>
+                      <option value="months">Months</option>
+                      <option value="years">Years</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                  </div>
+                </div>
+                {buf.frequencyUnit === 'custom' && (
+                  <div className="flex flex-col">
+                    <label className="text-xs text-gray-600 mb-1">Custom pattern</label>
+                    <input
+                      type="text"
+                      value={buf.customPattern}
+                      onChange={(e) => updateEditField(transaction.id, { customPattern: e.target.value })}
+                      className="input-field text-sm"
+                      placeholder="e.g., 1st and 15th"
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  onClick={() => deleteEditRow(transaction.id)}
+                  className="text-sm px-3 py-1.5 rounded border border-red-200 text-red-600 hover:bg-red-50"
+                >
+                  Delete
+                </button>
+                {transaction.isEdited && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Reset this occurrence to the original transaction values?')) {
+                        resetEditRow(transaction.id)
+                        cancelEditRow(transaction.id)
+                      }
+                    }}
+                    className="text-sm px-3 py-1.5 rounded border border-amber-200 text-amber-700 hover:bg-amber-50"
+                  >
+                    Reset
+                  </button>
+                )}
+                <button
+                  onClick={() => cancelEditRow(transaction.id)}
+                  className="btn-secondary text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => saveEditRow(transaction.id)}
+                  disabled={!buf.description.trim() || !buf.amount || Number.isNaN(parseFloat(buf.amount))}
+                  className="btn-primary text-sm disabled:opacity-50"
+                >
+                  Save
+                </button>
+              </div>
+              {originalTx && (
+                <p className="text-xs text-gray-500">
+                  Source: <span className="font-medium">{originalTx.name}</span> starting {formatDateForDisplay(originalTx.startDate)}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )
+    })
+  }
   
   // Calculate end date for display
   const endDate = createSafeDate(startDate)
@@ -1006,7 +1231,8 @@ const Forecast: React.FC = () => {
           const accountPct = accountCount > 0 ? (100 - fixedSum - descPct) / accountCount : 0
           const totalCols = 4 + accountCount
           return (
-            <div className="overflow-x-auto">
+            <>
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full border-collapse table-fixed" style={{ minWidth: '640px' }}>
                 <colgroup>
                   <col style={{ width: `${checkboxPct}%` }} />
@@ -1260,6 +1486,10 @@ const Forecast: React.FC = () => {
                 </tbody>
               </table>
             </div>
+            <div className="md:hidden space-y-2">
+              {renderMobileForecastCards()}
+            </div>
+            </>
           )
         })() : (
           <div className="text-center py-12 text-gray-500">
