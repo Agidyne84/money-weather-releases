@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.25",
-    "versionCode":  10125,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.25/app-release.apk",
+    "version":  "1.1.26",
+    "versionCode":  10126,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.26/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Fixed SQLite 'Already in transaction' error by making closeDatabase() resilient (guarantees native connection is destroyed even when plugin transaction flag is stuck) and adding a fallback reconnect retry."
+    "releaseNotes":  "Fixed SQLite 'Already in transaction' error by completely bypassing the plugin's beginTransaction()/commitTransaction() methods. Import and reset now use executeSet() which runs all statements in a single native SQLite transaction without relying on the plugin's buggy transaction flag."
 }

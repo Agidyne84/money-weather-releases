@@ -3,6 +3,7 @@
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import { getDbConnection, initializeDatabase, closeDatabase } from '../services/database/mobileDb'
+import type { capSQLiteSet } from '@capacitor-community/sqlite'
 
 // Binary file format constants (must match server/src/backup.ts exactly)
 const MAGIC = new Uint8Array([0x42, 0x41, 0x50, 0x4B]) // 'BAPK'
@@ -212,107 +213,86 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
   }
 
   // Close any existing connection first to guarantee a completely fresh native state.
-  // initializeDatabase() will create a new connection.
   await closeDatabase()
   await initializeDatabase()
-  let db = await getDbConnection()
+  const db = await getDbConnection()
 
-  // Safety: if the plugin's transaction flag is still stuck, close and reconnect once more.
-  try {
-    await db.beginTransaction()
-  } catch (err) {
-    const msg = String(err)
-    if (msg.includes('already in transaction') || msg.includes('Already in transaction')) {
-      console.warn('[importMobileBackup] beginTransaction failed, forcing reconnect:', msg)
-      await closeDatabase()
-      db = await getDbConnection()
-      await db.beginTransaction()
-    } else {
-      throw err
-    }
+  // Build all import statements into a single executeSet call.
+  // executeSet runs everything in one native SQLite transaction (transaction=true by default),
+  // completely bypassing the plugin's buggy beginTransaction()/commitTransaction() flag.
+  const set: capSQLiteSet[] = []
+
+  set.push({ statement: 'PRAGMA foreign_keys = OFF' })
+  set.push({ statement: 'DELETE FROM historical_transactions' })
+  set.push({ statement: 'DELETE FROM forecast_overrides' })
+  set.push({ statement: 'DELETE FROM transaction_rules' })
+  set.push({ statement: 'DELETE FROM transactions' })
+  set.push({ statement: 'DELETE FROM categories' })
+  set.push({ statement: 'DELETE FROM accounts' })
+  set.push({ statement: 'DELETE FROM user_preferences' })
+
+  for (const row of envelope.tables.accounts) {
+    set.push({
+      statement: `INSERT INTO accounts (id, name, type, starting_balance, current_balance, include_in_low_balance_analysis, import_settings, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      values: [row.id, row.name, row.type, row.starting_balance, row.current_balance,
+        row.include_in_low_balance_analysis, row.import_settings, row.created_at, row.updated_at],
+    })
   }
+
+  for (const row of envelope.tables.categories) {
+    set.push({
+      statement: `INSERT INTO categories (id, name, parent_id, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      values: [row.id, row.name, row.parent_id, row.color, row.sort_order, row.created_at],
+    })
+  }
+
+  for (const row of envelope.tables.transactions) {
+    set.push({
+      statement: `INSERT INTO transactions (id, name, amount, frequency_value, frequency_unit, custom_frequency_pattern, start_date, end_date, pause_start_date, pause_end_date, category_id, account_id, type, transfer_to_account_id, is_transfer, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      values: [row.id, row.name, row.amount, row.frequency_value, row.frequency_unit, row.custom_frequency_pattern,
+        row.start_date, row.end_date, row.pause_start_date, row.pause_end_date,
+        row.category_id, row.account_id, row.type, row.transfer_to_account_id, row.is_transfer, row.is_active,
+        row.created_at, row.updated_at],
+    })
+  }
+
+  for (const row of envelope.tables.forecast_overrides) {
+    set.push({
+      statement: `INSERT INTO forecast_overrides (id, transaction_id, date, original_amount, override_amount, is_posted, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      values: [row.id, row.transaction_id, row.date, row.original_amount, row.override_amount,
+        row.is_posted, row.notes, row.created_at, row.updated_at],
+    })
+  }
+
+  for (const row of envelope.tables.transaction_rules) {
+    set.push({
+      statement: `INSERT INTO transaction_rules (id, transaction_id, account_id, restrict_to_account, pattern, category_id, is_active, match_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      values: [row.id, row.transaction_id, row.account_id, row.restrict_to_account, row.pattern,
+        row.category_id, row.is_active, row.match_count, row.created_at, row.updated_at],
+    })
+  }
+
+  for (const row of envelope.tables.historical_transactions) {
+    set.push({
+      statement: `INSERT INTO historical_transactions (id, transaction_id, account_id, category_id, date, description, amount, type, transfer_to_account_id, is_transfer, is_excluded, is_manual_edit, is_suppressed, is_posted, bank_description, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      values: [row.id, row.transaction_id, row.account_id, row.category_id, row.date, row.description,
+        row.amount, row.type, row.transfer_to_account_id, row.is_transfer, row.is_excluded,
+        row.is_manual_edit, row.is_suppressed, row.is_posted, row.bank_description, row.archived_at],
+    })
+  }
+
+  for (const row of envelope.tables.user_preferences) {
+    set.push({
+      statement: `INSERT INTO user_preferences (key, value, updated_at) VALUES (?, ?, ?)`,
+      values: [row.key, row.value, row.updated_at],
+    })
+  }
+
+  set.push({ statement: 'PRAGMA foreign_keys = ON' })
+
   try {
-    await db.execute('PRAGMA foreign_keys = OFF')
-    await db.execute('DELETE FROM historical_transactions')
-    await db.execute('DELETE FROM forecast_overrides')
-    await db.execute('DELETE FROM transaction_rules')
-    await db.execute('DELETE FROM transactions')
-    await db.execute('DELETE FROM categories')
-    await db.execute('DELETE FROM accounts')
-    await db.execute('DELETE FROM user_preferences')
-
-    for (const row of envelope.tables.accounts) {
-      await db.run(
-        `INSERT INTO accounts (id, name, type, starting_balance, current_balance, include_in_low_balance_analysis, import_settings, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [row.id, row.name, row.type, row.starting_balance, row.current_balance,
-         row.include_in_low_balance_analysis, row.import_settings, row.created_at, row.updated_at]
-      )
-    }
-
-    for (const row of envelope.tables.categories) {
-      await db.run(
-        `INSERT INTO categories (id, name, parent_id, color, sort_order, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [row.id, row.name, row.parent_id, row.color, row.sort_order, row.created_at]
-      )
-    }
-
-    for (const row of envelope.tables.transactions) {
-      await db.run(
-        `INSERT INTO transactions (id, name, amount, frequency_value, frequency_unit, custom_frequency_pattern, start_date, end_date, pause_start_date, pause_end_date, category_id, account_id, type, transfer_to_account_id, is_transfer, is_active, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [row.id, row.name, row.amount, row.frequency_value, row.frequency_unit, row.custom_frequency_pattern,
-         row.start_date, row.end_date, row.pause_start_date, row.pause_end_date,
-         row.category_id, row.account_id, row.type, row.transfer_to_account_id, row.is_transfer, row.is_active,
-         row.created_at, row.updated_at]
-      )
-    }
-
-    for (const row of envelope.tables.forecast_overrides) {
-      await db.run(
-        `INSERT INTO forecast_overrides (id, transaction_id, date, original_amount, override_amount, is_posted, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [row.id, row.transaction_id, row.date, row.original_amount, row.override_amount,
-         row.is_posted, row.notes, row.created_at, row.updated_at]
-      )
-    }
-
-    for (const row of envelope.tables.transaction_rules) {
-      await db.run(
-        `INSERT INTO transaction_rules (id, transaction_id, account_id, restrict_to_account, pattern, category_id, is_active, match_count, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [row.id, row.transaction_id, row.account_id, row.restrict_to_account, row.pattern,
-         row.category_id, row.is_active, row.match_count, row.created_at, row.updated_at]
-      )
-    }
-
-    for (const row of envelope.tables.historical_transactions) {
-      await db.run(
-        `INSERT INTO historical_transactions (id, transaction_id, account_id, category_id, date, description, amount, type, transfer_to_account_id, is_transfer, is_excluded, is_manual_edit, is_suppressed, is_posted, bank_description, archived_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [row.id, row.transaction_id, row.account_id, row.category_id, row.date, row.description,
-         row.amount, row.type, row.transfer_to_account_id, row.is_transfer, row.is_excluded,
-         row.is_manual_edit, row.is_suppressed, row.is_posted, row.bank_description, row.archived_at]
-      )
-    }
-
-    for (const row of envelope.tables.user_preferences) {
-      await db.run(
-        `INSERT INTO user_preferences (key, value, updated_at) VALUES (?, ?, ?)`,
-        [row.key, row.value, row.updated_at]
-      )
-    }
-
-    await db.execute('PRAGMA foreign_keys = ON')
-    await db.commitTransaction()
+    await db.executeSet(set)
   } catch (error) {
-    try {
-      await db.rollbackTransaction()
-    } catch {
-      // ignore
-    }
-    await db.execute('PRAGMA foreign_keys = ON')
     throw new Error(`Restore failed: ${(error as Error).message}`)
   }
 
@@ -334,21 +314,21 @@ export async function resetMobileDatabase(): Promise<{ success: boolean; message
   await initializeDatabase()
   const db = await getDbConnection()
 
-  await db.beginTransaction()
+  const set: capSQLiteSet[] = [
+    { statement: 'PRAGMA foreign_keys = OFF' },
+    { statement: 'DELETE FROM historical_transactions' },
+    { statement: 'DELETE FROM forecast_overrides' },
+    { statement: 'DELETE FROM transaction_rules' },
+    { statement: 'DELETE FROM transactions' },
+    { statement: 'DELETE FROM categories' },
+    { statement: 'DELETE FROM accounts' },
+    { statement: 'DELETE FROM user_preferences' },
+    { statement: 'PRAGMA foreign_keys = ON' },
+  ]
+
   try {
-    await db.execute('PRAGMA foreign_keys = OFF')
-    await db.execute('DELETE FROM historical_transactions')
-    await db.execute('DELETE FROM forecast_overrides')
-    await db.execute('DELETE FROM transaction_rules')
-    await db.execute('DELETE FROM transactions')
-    await db.execute('DELETE FROM categories')
-    await db.execute('DELETE FROM accounts')
-    await db.execute('DELETE FROM user_preferences')
-    await db.execute('PRAGMA foreign_keys = ON')
-    await db.commitTransaction()
+    await db.executeSet(set)
   } catch (error) {
-    await db.rollbackTransaction()
-    await db.execute('PRAGMA foreign_keys = ON')
     throw new Error(`Reset failed: ${(error as Error).message}`)
   }
 
