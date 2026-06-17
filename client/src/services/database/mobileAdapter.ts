@@ -382,7 +382,7 @@ export const historyApi = {
       LEFT JOIN accounts a ON h.account_id = a.id
       LEFT JOIN categories c ON h.category_id = c.id
       ${where}
-      ORDER BY h.date DESC, h.created_at DESC
+      ORDER BY h.date DESC, h.archived_at DESC
       ${limit} ${offset}
     `
     const result = await db.query(sql, params)

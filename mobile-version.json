@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.27",
-    "versionCode":  10127,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.27/app-release.apk",
+    "version":  "1.1.28",
+    "versionCode":  10128,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.28/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Fixed executeSet 'No value for values' error by adding empty values arrays to all parameter-less SQL statements (PRAGMA and DELETE)."
+    "releaseNotes":  "Fixed History query referencing non-existent h.created_at column (should be h.archived_at). This also fixes Budget and Forecast appearing empty because their data loaders call historyApi.getAll() inside Promise.all, which rejected when the query errored."
 }
