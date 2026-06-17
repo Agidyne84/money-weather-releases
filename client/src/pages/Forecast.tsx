@@ -867,20 +867,20 @@ const Forecast: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Forecast</h1>
           <p className="text-gray-600">View and manage your financial forecast</p>
         </div>
-        <div className="flex space-x-3">
-          <input 
-            type="date" 
-            className="form-input" 
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
+          <input
+            type="date"
+            className="form-input w-full sm:w-auto"
             value={startDate}
             onChange={(e) => handleStartDateChange(e.target.value)}
           />
-          <select 
-            className="form-input"
+          <select
+            className="form-input w-full sm:w-auto"
             value={forecastMonths}
             onChange={(e) => setForecastMonths(Number(e.target.value))}
           >

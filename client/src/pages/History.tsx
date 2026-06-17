@@ -310,6 +310,263 @@ const History: React.FC = () => {
   const accountName = (id: string) => accounts.find(a => a.id === id)?.name ?? '—'
   const categoryName = (id: string) => categories.find(c => c.id === id)?.name ?? '—'
 
+  const renderMobileHistoryCards = () => {
+    return filteredRows.map(row => {
+      const isEditing = editingId === row.id
+      const isSelected = selectedRows.includes(row.id)
+      const isExpanded = expandedId === row.id
+      const cardBg = isEditing
+        ? 'bg-blue-50 border-blue-200'
+        : isSelected
+          ? 'bg-blue-50/70 border-blue-100'
+          : 'bg-white border-gray-200'
+
+      return (
+        <div
+          key={row.id}
+          className={`border rounded-lg p-3 shadow-sm ${cardBg}`}
+          onClick={() => {
+            if (row.bankDescription && !isEditing) {
+              setExpandedId(prev => prev === row.id ? null : row.id)
+            }
+          }}
+        >
+          {/* Header: checkbox + date + amount */}
+          <div className="flex justify-between items-center mb-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <input
+                type="checkbox"
+                className="rounded flex-shrink-0"
+                checked={isSelected}
+                onChange={(e) => {
+                  e.stopPropagation()
+                  toggleRowSelection(row.id)
+                }}
+              />
+              {isEditing ? (
+                <input
+                  type="date"
+                  className="input-field text-sm w-full"
+                  value={buffer.date}
+                  onChange={e => setBuffer({ ...buffer, date: e.target.value })}
+                  onClick={e => e.stopPropagation()}
+                />
+              ) : (
+                <span className="text-sm text-gray-900">
+                  {formatDateForDisplay(row.date)}
+                </span>
+              )}
+            </div>
+            {isEditing ? (
+              <input
+                type="number"
+                step="0.01"
+                className="input-field text-sm w-28 text-right"
+                value={buffer.amount}
+                onChange={e => setBuffer({ ...buffer, amount: e.target.value })}
+                onClick={e => e.stopPropagation()}
+              />
+            ) : (
+              <span className={`text-sm font-medium flex-shrink-0 ml-2 ${
+                row.amount >= 0 ? 'text-green-600' : row.amount < 0 ? 'text-red-600' : 'text-gray-600'
+              }`}>
+                {row.amount >= 0 ? '+' : '-'}${Math.abs(row.amount).toFixed(2)}
+              </span>
+            )}
+          </div>
+
+          {/* Description */}
+          <div className="flex items-start gap-2 min-w-0 mb-2">
+            {row.categoryColor && (
+              <div
+                className="w-3 h-3 rounded-full flex-shrink-0 mt-0.5"
+                style={{ backgroundColor: row.categoryColor }}
+              />
+            )}
+            <div className="min-w-0 flex-1">
+              {isEditing ? (
+                <input
+                  type="text"
+                  className="input-field text-sm w-full"
+                  value={buffer.description}
+                  onChange={e => setBuffer({ ...buffer, description: e.target.value })}
+                  onClick={e => e.stopPropagation()}
+                />
+              ) : (
+                <>
+                  <p className="font-medium text-gray-900 text-sm truncate">
+                    {row.description}
+                  </p>
+                  {isExpanded && row.bankDescription && (
+                    <p className="text-xs text-blue-700 font-mono mt-0.5 truncate" title={row.bankDescription}>
+                      {row.bankDescription}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500 truncate">
+                    {row.type === 'income' ? 'Income' : row.type === 'expense' ? 'Expense' : 'Administrative'}
+                    {' · '}
+                    {row.accountName || accountName(row.accountId)}
+                    {row.isTransfer && row.transferToAccountId && (
+                      <span className="text-blue-500"> → {accountName(row.transferToAccountId)}</span>
+                    )}
+                    {' · '}
+                    {row.categoryName || categoryName(row.categoryId)}
+                    {' · '}
+                    <span className="text-gray-400">
+                      {row.sourceTransactionName || (row.transactionId ? '(deleted)' : 'Manual')}
+                    </span>
+                  </p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {row.isSuppressed && (
+                      <span
+                        title="Deleted from Forecast"
+                        className="inline-flex items-center text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200"
+                      >
+                        Deleted
+                      </span>
+                    )}
+                    {row.bankDescription ? (
+                      <span
+                        title="Imported from bank statement"
+                        className="inline-flex items-center text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200"
+                      >
+                        Bank
+                      </span>
+                    ) : row.isManualEdit && (
+                      <span
+                        title="Manually edited"
+                        className="inline-flex items-center text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200"
+                      >
+                        Edited
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Actions */}
+          {!isEditing && (
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100" onClick={e => e.stopPropagation()}>
+              <button onClick={() => startEdit(row)} className="btn-secondary text-xs">Edit</button>
+              {row.isManualEdit && row.transactionId && !row.bankDescription && (
+                <button
+                  onClick={() => resetRow(row)}
+                  className="text-xs px-2 py-1 rounded border border-amber-200 text-amber-700 hover:bg-amber-50"
+                >
+                  Reset
+                </button>
+              )}
+              <button
+                onClick={() => remove(row)}
+                className="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50"
+              >
+                Delete
+              </button>
+            </div>
+          )}
+
+          {/* Edit controls */}
+          {isEditing && (
+            <div className="space-y-2 mt-2 pt-2 border-t border-blue-200" onClick={e => e.stopPropagation()}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="flex flex-col">
+                  <label className="text-xs text-gray-600 mb-1">Account</label>
+                  <select
+                    className="input-field text-sm"
+                    value={buffer.accountId}
+                    onChange={e => setBuffer({ ...buffer, accountId: e.target.value })}
+                  >
+                    <option value="">Select Account</option>
+                    {accounts.map(a => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center pt-4">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 text-blue-600"
+                      checked={buffer.isTransfer}
+                      onChange={(e) => setBuffer({ ...buffer, isTransfer: e.target.checked, transferToAccountId: e.target.checked ? buffer.transferToAccountId : '' })}
+                    />
+                    <span className="text-sm font-medium text-gray-700">Transfer</span>
+                  </label>
+                </div>
+                {buffer.isTransfer && (
+                  <div className="flex flex-col">
+                    <label className="text-xs text-gray-600 mb-1">Transfer To Account</label>
+                    <select
+                      className="input-field text-sm"
+                      value={buffer.transferToAccountId}
+                      onChange={e => setBuffer({ ...buffer, transferToAccountId: e.target.value })}
+                    >
+                      <option value="">Select destination account</option>
+                      {accounts
+                        .filter(a => a.id !== buffer.accountId)
+                        .map(a => (
+                          <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+                <div className="flex flex-col">
+                  <label className="text-xs text-gray-600 mb-1">Category</label>
+                  <select
+                    className="input-field text-sm"
+                    value={buffer.categoryId}
+                    onChange={e => setBuffer({ ...buffer, categoryId: e.target.value })}
+                  >
+                    <option value="">Select Category</option>
+                    {categories.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-xs text-gray-600 mb-1">Type</label>
+                  <select
+                    className="input-field text-sm"
+                    value={buffer.type}
+                    onChange={e => setBuffer({ ...buffer, type: e.target.value as 'income' | 'expense' | 'administrative' | '' })}
+                  >
+                    <option value="">-- Select --</option>
+                    <option value="income">Income</option>
+                    <option value="expense">Expense</option>
+                    <option value="administrative">Administrative</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  onClick={() => remove(row)}
+                  className="text-sm px-3 py-1.5 rounded border border-red-200 text-red-600 hover:bg-red-50"
+                >
+                  Delete
+                </button>
+                <button
+                  onClick={cancel}
+                  className="btn-secondary text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={save}
+                  disabled={!buffer.description.trim() || !buffer.amount || Number(buffer.amount) === 0 || !buffer.accountId || !buffer.categoryId || !buffer.type}
+                  className="btn-primary text-sm disabled:opacity-50"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    })
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -528,7 +785,8 @@ const History: React.FC = () => {
             No rows match the current filters. Try adjusting or clearing the filter criteria.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full border-collapse table-fixed" style={{ minWidth: '640px' }}>
               <colgroup>
                 <col style={{ width: '4%' }} />
@@ -804,6 +1062,10 @@ const History: React.FC = () => {
               </tbody>
             </table>
           </div>
+          <div className="md:hidden space-y-2">
+            {renderMobileHistoryCards()}
+          </div>
+          </>
         )}
       </div>
     </div>
