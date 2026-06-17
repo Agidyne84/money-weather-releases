@@ -222,14 +222,14 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
   // completely bypassing the plugin's buggy beginTransaction()/commitTransaction() flag.
   const set: capSQLiteSet[] = []
 
-  set.push({ statement: 'PRAGMA foreign_keys = OFF' })
-  set.push({ statement: 'DELETE FROM historical_transactions' })
-  set.push({ statement: 'DELETE FROM forecast_overrides' })
-  set.push({ statement: 'DELETE FROM transaction_rules' })
-  set.push({ statement: 'DELETE FROM transactions' })
-  set.push({ statement: 'DELETE FROM categories' })
-  set.push({ statement: 'DELETE FROM accounts' })
-  set.push({ statement: 'DELETE FROM user_preferences' })
+  set.push({ statement: 'PRAGMA foreign_keys = OFF', values: [] })
+  set.push({ statement: 'DELETE FROM historical_transactions', values: [] })
+  set.push({ statement: 'DELETE FROM forecast_overrides', values: [] })
+  set.push({ statement: 'DELETE FROM transaction_rules', values: [] })
+  set.push({ statement: 'DELETE FROM transactions', values: [] })
+  set.push({ statement: 'DELETE FROM categories', values: [] })
+  set.push({ statement: 'DELETE FROM accounts', values: [] })
+  set.push({ statement: 'DELETE FROM user_preferences', values: [] })
 
   for (const row of envelope.tables.accounts) {
     set.push({
@@ -288,7 +288,7 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
     })
   }
 
-  set.push({ statement: 'PRAGMA foreign_keys = ON' })
+  set.push({ statement: 'PRAGMA foreign_keys = ON', values: [] })
 
   try {
     await db.executeSet(set)
@@ -315,15 +315,15 @@ export async function resetMobileDatabase(): Promise<{ success: boolean; message
   const db = await getDbConnection()
 
   const set: capSQLiteSet[] = [
-    { statement: 'PRAGMA foreign_keys = OFF' },
-    { statement: 'DELETE FROM historical_transactions' },
-    { statement: 'DELETE FROM forecast_overrides' },
-    { statement: 'DELETE FROM transaction_rules' },
-    { statement: 'DELETE FROM transactions' },
-    { statement: 'DELETE FROM categories' },
-    { statement: 'DELETE FROM accounts' },
-    { statement: 'DELETE FROM user_preferences' },
-    { statement: 'PRAGMA foreign_keys = ON' },
+    { statement: 'PRAGMA foreign_keys = OFF', values: [] },
+    { statement: 'DELETE FROM historical_transactions', values: [] },
+    { statement: 'DELETE FROM forecast_overrides', values: [] },
+    { statement: 'DELETE FROM transaction_rules', values: [] },
+    { statement: 'DELETE FROM transactions', values: [] },
+    { statement: 'DELETE FROM categories', values: [] },
+    { statement: 'DELETE FROM accounts', values: [] },
+    { statement: 'DELETE FROM user_preferences', values: [] },
+    { statement: 'PRAGMA foreign_keys = ON', values: [] },
   ]
 
   try {
