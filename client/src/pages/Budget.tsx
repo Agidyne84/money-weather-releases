@@ -198,6 +198,47 @@ const Budget: React.FC = () => {
   const getColGroup = () =>
     visibleFields.map(field => <col key={field} style={{ width: FIELD_WIDTHS[field] }} />)
 
+  const renderMobileTransactionCards = (txs: Transaction[], type: 'income' | 'expense' | 'administrative') => {
+    return txs.map(transaction => {
+      const category = categories.find(c => c.id === transaction.categoryId)
+      const monthlyAmount = getTransactionMonthlyAmount(transaction)
+      const yearlyAmount = monthlyAmount * 12
+      const now = new Date()
+      const isPaused = !!(transaction.pauseStartDate && transaction.pauseEndDate &&
+        now >= createSafeDate(transaction.pauseStartDate) &&
+        now <= createSafeDate(transaction.pauseEndDate))
+      const sign = type === 'income' ? '+' : type === 'expense' ? '-' : transaction.amount >= 0 ? '+' : ''
+      const colorClass = type === 'income' ? 'text-green-600' : type === 'expense' ? 'text-red-600' : 'text-gray-600'
+
+      return (
+        <div key={transaction.id} className="bg-white border border-gray-200 rounded-lg p-4 mb-3 shadow-sm">
+          <div className="flex justify-between items-start mb-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: category?.color || '#6B7280' }} />
+              <span className="font-medium text-gray-900 truncate">{transaction.name}</span>
+              {isPaused && <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 font-medium flex-shrink-0">⏸</span>}
+            </div>
+            <span className={`font-medium ${colorClass} flex-shrink-0 ml-2`}>
+              {sign}${Math.abs(transaction.amount).toFixed(2)}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm mb-3">
+            <div className="text-gray-500 truncate">Category: <span className="text-gray-700">{transaction.categoryName || category?.name || 'Uncategorized'}</span></div>
+            <div className="text-gray-500 truncate">Account: <span className="text-gray-700">{transaction.accountName || accounts.find(a => a.id === transaction.accountId)?.name || 'Unknown'}</span></div>
+            <div className="text-gray-500 truncate">Freq: <span className="text-gray-700">{getFrequencyDescription(transaction.frequency)}</span></div>
+            <div className="text-gray-500 truncate">Start: <span className="text-gray-700">{formatDateForDisplay(transaction.startDate)}</span></div>
+            <div className="text-gray-500 truncate">Monthly: <span className={`font-medium ${colorClass}`}>{sign}${monthlyAmount.toFixed(2)}</span></div>
+            <div className="text-gray-500 truncate">Yearly: <span className={`font-medium ${colorClass}`}>{sign}${yearlyAmount.toFixed(2)}</span></div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => startEditTransaction(transaction)} className="btn-secondary text-xs flex-1 py-1.5">Edit</button>
+            <button onClick={() => handleDeleteTransaction(transaction)} className="text-xs px-3 py-1.5 rounded border border-red-200 text-red-600 hover:bg-red-50">Delete</button>
+          </div>
+        </div>
+      )
+    })
+  }
+
   const weekDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
   const weekDayShortNames = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -1562,6 +1603,7 @@ const Budget: React.FC = () => {
             <div className="mb-6">
               <h4 className="text-md font-medium text-gray-700 mb-2">Income Items</h4>
               <div>
+                <div className="hidden md:block overflow-x-auto">
                 <table className="w-full border-collapse table-fixed">
                   <colgroup>{getColGroup()}</colgroup>
                   <thead>
@@ -1843,6 +1885,10 @@ const Budget: React.FC = () => {
                     </tr>
                   </tbody>
                 </table>
+                </div>
+                <div className="md:hidden">
+                  {renderMobileTransactionCards(transactions.filter(t => t.type === 'income' && t.isActive && t.id).sort((a, b) => a.name.localeCompare(b.name)), 'income')}
+                </div>
                 {transactions.filter(t => t.type === 'income' && t.isActive && t.id).length === 0 && (
                   <p className="text-gray-500 text-sm py-4">No income transactions found</p>
                 )}
@@ -1853,6 +1899,7 @@ const Budget: React.FC = () => {
             <div>
               <h4 className="text-md font-medium text-gray-700 mb-2">Expense Items</h4>
               <div>
+                <div className="hidden md:block overflow-x-auto">
                 <table className="w-full border-collapse table-fixed">
                   <colgroup>{getColGroup()}</colgroup>
                   <thead>
@@ -2134,6 +2181,10 @@ const Budget: React.FC = () => {
                     </tr>
                   </tbody>
                 </table>
+                </div>
+                <div className="md:hidden">
+                  {renderMobileTransactionCards(transactions.filter(t => t.type === 'expense' && t.isActive && t.id).sort((a, b) => a.name.localeCompare(b.name)), 'expense')}
+                </div>
                 {transactions.filter(t => t.type === 'expense' && t.isActive && t.id).length === 0 && (
                   <p className="text-gray-500 text-sm py-4">No expense transactions found</p>
                 )}
@@ -2144,6 +2195,7 @@ const Budget: React.FC = () => {
             <div>
               <h4 className="text-md font-medium text-gray-700 mb-2">Administrative Items</h4>
               <div>
+                <div className="hidden md:block overflow-x-auto">
                 <table className="w-full border-collapse table-fixed">
                   <colgroup>{getColGroup()}</colgroup>
                   <thead>
@@ -2406,6 +2458,10 @@ const Budget: React.FC = () => {
                     </tr>
                   </tbody>
                 </table>
+                </div>
+                <div className="md:hidden">
+                  {renderMobileTransactionCards(transactions.filter(t => t.type === 'administrative' && t.isActive && t.id).sort((a, b) => a.name.localeCompare(b.name)), 'administrative')}
+                </div>
                 {transactions.filter(t => t.type === 'administrative' && t.isActive && t.id).length === 0 && (
                   <p className="text-gray-500 text-sm py-4">No administrative transactions found</p>
                 )}

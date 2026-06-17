@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.28",
-    "versionCode":  10128,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.28/app-release.apk",
+    "version":  "1.1.29",
+    "versionCode":  10129,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.29/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Fixed History query referencing non-existent h.created_at column (should be h.archived_at). This also fixes Budget and Forecast appearing empty because their data loaders call historyApi.getAll() inside Promise.all, which rejected when the query errored."
+    "releaseNotes":  "Redesigned Budget by Item mobile view: replaced cramped multi-column table with stacked card layout. Each card shows name + amount prominently, with category, account, frequency, start date, monthly and yearly amounts in a clean 2-column grid. Desktop table unchanged with added horizontal scroll."
 }
