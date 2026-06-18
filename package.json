@@ -1,6 +1,6 @@
 {
   "name": "budget-app",
-  "version": "1.1.44",
+  "version": "1.1.45",
   "description": "Money Weather - root workspace",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
