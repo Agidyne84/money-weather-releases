@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.37",
-    "versionCode":  10137,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.37/app-release.apk",
+    "version":  "1.1.38",
+    "versionCode":  10138,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.38/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Cloud Sync: new Automatic Sync mode pushes local changes and pulls cloud changes automatically. Manual Sync mode (default) preserves the existing push/pull + Sync Now controls. Missing cloud backup files are now detected and shown with an error banner."
+    "releaseNotes":  "Fixes: Dashboard data now loads correctly on mobile first open. Cloud Sync toggle UI improved with clearer Manual/Automatic labels and consistent styling. Desktop update installer window is now visible again."
 }

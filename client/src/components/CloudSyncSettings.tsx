@@ -508,25 +508,20 @@ const CloudSyncSettings: React.FC = () => {
         <>
           {/* Auto / Manual Toggle */}
           <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-            <div>
-              <p className="text-sm font-medium text-gray-700">Sync Mode</p>
-              <p className="text-xs text-gray-500">
-                {settings.syncMode === 'auto'
-                  ? 'Local changes push automatically; cloud changes pull automatically.'
-                  : 'You control when to push or pull.'}
+            <div className="flex-1 min-w-0 mr-3">
+              <p className="text-sm font-medium text-gray-700">
+                Sync Mode &mdash; {settings.syncMode === 'auto' ? 'Automatic' : 'Manual'}
               </p>
             </div>
             <button
               onClick={handleSyncModeToggle}
               disabled={fileMissing}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                settings.syncMode === 'auto' ? 'bg-blue-600' : 'bg-gray-200'
-              } disabled:opacity-40`}
+              className="relative inline-flex h-6 w-12 flex-shrink-0 items-center rounded-full transition-colors bg-blue-600 disabled:opacity-40"
               title="Toggle Auto / Manual"
             >
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  settings.syncMode === 'auto' ? 'translate-x-6' : 'translate-x-1'
+                  settings.syncMode === 'auto' ? 'translate-x-7' : 'translate-x-1'
                 }`}
               />
             </button>
