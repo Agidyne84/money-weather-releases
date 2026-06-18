@@ -478,18 +478,18 @@ autoUpdater.on('update-downloaded', (info) => {
     defaultId: 0,
   }).then(({ response }) => {
     if (response === 0) {
-      // Restart Now — install with visible NSIS UI and restart immediately
-      // isSilent=false shows the installer window
+      // Restart Now — silent install and restart immediately
+      // isSilent=true runs NSIS silently (no wizard clicks needed)
       // isForceRunAfter=true ensures app restarts after install
-      autoUpdater.quitAndInstall(false, true);
+      autoUpdater.quitAndInstall(true, true);
     } else {
       // "Install on Next Launch" — flag so we call quitAndInstall on next quit
       pendingInstallOnQuit = true;
       dialog.showMessageBox(dialogParent, {
         type: 'warning',
         title: 'Update Ready',
-        message: 'The update will install when you close the app.',
-        detail: 'Please wait for the installer to finish before reopening.',
+        message: 'The update will install silently when you close the app.',
+        detail: 'Money Weather will restart automatically when the install completes.',
         buttons: ['OK'],
       }).catch(() => {});
     }
@@ -525,8 +525,8 @@ app.on('activate', () => {
 app.on('before-quit', () => {
   if (pendingInstallOnQuit) {
     pendingInstallOnQuit = false;
-    console.log('[Updater] Running installer with UI on quit');
-    autoUpdater.quitAndInstall(false, true);
+    console.log('[Updater] Running silent installer on quit');
+    autoUpdater.quitAndInstall(true, true);
     return;
   }
   stopServer();

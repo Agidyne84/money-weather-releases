@@ -1,7 +1,7 @@
-﻿{
-    "version":  "1.1.40",
-    "versionCode":  10140,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.40/app-release.apk",
+{
+    "version": "1.1.41",
+    "versionCode": 10141,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.41/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Fixes: Push/Pull toggle direction flipped (Pull=left, Push=right). Desktop installer remembers All Users vs Only Me setting and offers 'Open app' checkbox checked by default. All app icons regenerated with padding to prevent cutoff. Desktop banner icon now loads correctly."
+    "releaseNotes": "Fixes: Desktop updates now install silently and auto-restart. Icons regenerated to fit full image with padding - no more cutoff. Mobile app icon should now appear on home screen and launch tray (added missing color resource)."
 }

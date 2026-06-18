@@ -1,4 +1,5 @@
 # Generate multi-resolution ICO from Money Weather icon - transparent.png
+# Fits the full image (preserving aspect ratio) with padding to prevent cutoff
 # Requires .NET Framework (built into Windows)
 
 Add-Type -AssemblyName System.Drawing
@@ -10,15 +11,10 @@ $outPath = "C:\Users\Raymond\CascadeProjects\BudgetApp\electron\assets\icon.ico"
 $src = [System.Drawing.Image]::FromFile($srcPath)
 $srcW = $src.Width
 $srcH = $src.Height
+$srcRect = New-Object System.Drawing.Rectangle(0, 0, $srcW, $srcH)
 
-# Square crop dimensions (center crop)
-$cropSize = [Math]::Min($srcW, $srcH)
-$cropX = [Math]::Floor(($srcW - $cropSize) / 2)
-$cropY = [Math]::Floor(($srcH - $cropSize) / 2)
-$srcRect = New-Object System.Drawing.Rectangle($cropX, $cropY, $cropSize, $cropSize)
-
-# Icon content scale (0.72 = 72% fill, 14% padding on each side)
-$scale = 0.72
+# Padding: scale the fitted image down by 75% to add blank space on all sides
+$paddingScale = 0.75
 
 # Sizes to include in ICO
 $sizes = @(16, 32, 48, 64, 128, 256)
@@ -30,15 +26,22 @@ foreach ($size in $sizes) {
     $g = [System.Drawing.Graphics]::FromImage($bmp)
     $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $drawSize = [Math]::Floor($size * $scale)
-    $offset = [Math]::Floor(($size - $drawSize) / 2)
-    $destRect = New-Object System.Drawing.Rectangle($offset, $offset, $drawSize, $drawSize)
+    $g.Clear([System.Drawing.Color]::Transparent)
+
+    # Fit full image into canvas while preserving aspect ratio
+    $fitScale = [Math]::Min($size / $srcW, $size / $srcH)
+    $scale = $fitScale * $paddingScale
+    $drawW = [Math]::Floor($srcW * $scale)
+    $drawH = [Math]::Floor($srcH * $scale)
+    $offsetX = [Math]::Floor(($size - $drawW) / 2)
+    $offsetY = [Math]::Floor(($size - $drawH) / 2)
+    $destRect = New-Object System.Drawing.Rectangle($offsetX, $offsetY, $drawW, $drawH)
     $g.DrawImage($src, $destRect, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
-    
+
     $ms = New-Object System.IO.MemoryStream
     $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
     $pngDataList += ,$ms.ToArray()
-    
+
     $g.Dispose()
     $bmp.Dispose()
     $ms.Dispose()
@@ -68,12 +71,12 @@ foreach ($pngData in $pngDataList) {
     $offset += $pngData.Length
 }
 
-# ICONDIRENTRY for each size (index 0 = 16x16, 1 = 32x32, etc.)
+# ICONDIRENTRY for each size
 for ($i = 0; $i -lt $sizes.Length; $i++) {
     $size = $sizes[$i]
     $pngData = $pngDataList[$i]
     $entry = $entries[$i]
-    
+
     $dim = if ($size -eq 256) { [Byte]0 } else { [Byte]$size }
     $bw.Write($dim)  # Width (0 means 256)
     $bw.Write($dim)  # Height
