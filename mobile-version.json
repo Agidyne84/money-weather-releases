@@ -1,7 +1,7 @@
 {
-    "version": "1.1.43",
-    "versionCode": 10143,
-    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.43/app-release.apk",
+    "version": "1.1.44",
+    "versionCode": 10144,
+    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.44/app-release.apk",
     "force":  false,
-    "releaseNotes": "Fixes: Mobile app icon now appears on home screen and launch tray. Desktop updates remain fully silent with auto-restart."
+    "releaseNotes": "Fixes: Mobile app icon uses proper drawable background for adaptive icons. Home screen and launch tray icons should now display correctly."
 }
