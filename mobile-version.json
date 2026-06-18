@@ -1,7 +1,7 @@
 {
-    "version": "1.1.41",
-    "versionCode": 10141,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.41/app-release.apk",
+    "version": "1.1.42",
+    "versionCode": 10142,
+    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.42/app-release.apk",
     "force":  false,
-    "releaseNotes": "Fixes: Desktop updates now install silently and auto-restart. Icons regenerated to fit full image with padding - no more cutoff. Mobile app icon should now appear on home screen and launch tray (added missing color resource)."
+    "releaseNotes": "Fixes: Desktop updates now install completely silently with no wizard. Mobile manual update check now clears skipped versions so you can always check for the latest update."
 }

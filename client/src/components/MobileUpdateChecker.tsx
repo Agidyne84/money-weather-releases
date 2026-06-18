@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { Capacitor } from '@capacitor/core'
+import { Preferences } from '@capacitor/preferences'
 import {
   checkForMobileUpdate,
   downloadAndInstallUpdate,
@@ -26,6 +27,8 @@ const MobileUpdateChecker: React.FC = () => {
     setError(null)
     setIsCurrent(false)
     try {
+      // Clear any previously skipped version so manual check always queries fresh
+      await Preferences.remove({ key: 'ota_skip_version' })
       const result = await checkForMobileUpdate()
       if (result.error) {
         setError(result.error)
