@@ -5,6 +5,8 @@ import { Preferences } from '@capacitor/preferences'
 const DB_NAME = 'budget.db'
 let dbConnection: SQLiteDBConnection | null = null
 let sqliteConnection: SQLiteConnection | null = null
+let connectionPromise: Promise<SQLiteDBConnection> | null = null
+let initPromise: Promise<void> | null = null
 
 // Embedded schema — avoids fetch() issues in Capacitor WebView
 const SCHEMA = `
@@ -145,9 +147,7 @@ INSERT OR IGNORE INTO user_preferences (key, value) VALUES
     ('include_net_worth_in_analysis', 'true');
 `;
 
-export async function getDbConnection(): Promise<SQLiteDBConnection> {
-  if (dbConnection) return dbConnection
-
+async function doGetConnection(): Promise<SQLiteDBConnection> {
   sqliteConnection = new SQLiteConnection(CapacitorSQLite)
 
   // Check if connection exists and retrieve it, otherwise create new
@@ -168,7 +168,17 @@ export async function getDbConnection(): Promise<SQLiteDBConnection> {
   return dbConnection
 }
 
-export async function initializeDatabase(): Promise<void> {
+export async function getDbConnection(): Promise<SQLiteDBConnection> {
+  if (dbConnection) return dbConnection
+  if (!connectionPromise) {
+    connectionPromise = doGetConnection().finally(() => {
+      connectionPromise = null
+    })
+  }
+  return connectionPromise
+}
+
+async function doInitialize(): Promise<void> {
   const db = await getDbConnection()
 
   // Execute embedded schema — idempotent (CREATE TABLE IF NOT EXISTS)
@@ -199,6 +209,14 @@ export async function initializeDatabase(): Promise<void> {
   await ensureColumn(db, 'historical_transactions', 'is_excluded', 'INTEGER NOT NULL DEFAULT 0')
 
   await Preferences.set({ key: 'db_initialized', value: 'true' })
+}
+
+export async function initializeDatabase(): Promise<void> {
+  if (initPromise) return initPromise
+  initPromise = doInitialize().finally(() => {
+    initPromise = null
+  })
+  return initPromise
 }
 
 async function tableExists(db: SQLiteDBConnection, table: string): Promise<boolean> {

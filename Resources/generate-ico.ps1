@@ -1,9 +1,9 @@
-# Generate multi-resolution ICO from Large Icon.png
+# Generate multi-resolution ICO from Money Weather icon - transparent.png
 # Requires .NET Framework (built into Windows)
 
 Add-Type -AssemblyName System.Drawing
 
-$srcPath = "C:\Users\Raymond\CascadeProjects\BudgetApp\Resources\Large Icon.png"
+$srcPath = "C:\Users\Raymond\CascadeProjects\BudgetApp\Resources\Money Weather icon - transparent.png"
 $outPath = "C:\Users\Raymond\CascadeProjects\BudgetApp\electron\assets\icon.ico"
 
 # Load source image
