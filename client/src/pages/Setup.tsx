@@ -23,13 +23,15 @@ const Setup: React.FC = () => {
         <p className="text-gray-600">Configure your accounts, categories, and transactions</p>
       </div>
 
+      <div className="card">
+        <CloudSyncSettings />
+      </div>
       {hasRules && <RulesManager />}
       <AccountManager />
       <CategoryManager />
       <BulkTransactionEntry />
       {!hasRules && <RulesManager />}
       <BackupRestore />
-      <CloudSyncSettings />
       <AppLockSettings />
       <MobileUpdateChecker />
     </div>

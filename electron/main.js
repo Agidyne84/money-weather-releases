@@ -269,14 +269,26 @@ function createWindow() {
           click: () => {
             console.log('[Updater] Manual check triggered from menu');
             autoUpdater.checkForUpdates().catch((err) => {
-              console.error('[Updater] Manual check failed:', err.message);
-              dialog.showMessageBox(mainWindow, {
-                type: 'warning',
-                title: 'Update Check Failed',
-                message: 'Could not check for updates.',
-                detail: err.message,
-                buttons: ['OK'],
-              }).catch(() => {});
+              const is404 = err.statusCode === 404 || err.message?.includes('404') || err.message?.includes('latest.yml');
+              if (is404) {
+                console.log('[Updater] No desktop update channel configured (latest.yml not found). Skipping update check.');
+                dialog.showMessageBox(mainWindow, {
+                  type: 'info',
+                  title: 'No Updates Available',
+                  message: 'Your app is up to date.',
+                  detail: 'Desktop auto-update is not configured for this release channel.',
+                  buttons: ['OK'],
+                }).catch(() => {});
+              } else {
+                console.error('[Updater] Manual check failed:', err.message);
+                dialog.showMessageBox(mainWindow, {
+                  type: 'warning',
+                  title: 'Update Check Failed',
+                  message: 'Could not check for updates.',
+                  detail: err.message,
+                  buttons: ['OK'],
+                }).catch(() => {});
+              }
             });
           },
         },
@@ -388,7 +400,12 @@ function setupAutoUpdaterHandlers() {
   // Check for updates shortly after launch
   setTimeout(() => {
     autoUpdater.checkForUpdates().catch((err) => {
-      console.log('[Updater] Check skipped (update server not reachable):', err.message);
+      const is404 = err.statusCode === 404 || err.message?.includes('404') || err.message?.includes('latest.yml');
+      if (is404) {
+        console.log('[Updater] No desktop update channel configured (latest.yml not found).');
+      } else {
+        console.log('[Updater] Check skipped (update server not reachable):', err.message);
+      }
     });
   }, 3000);
 }
