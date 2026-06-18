@@ -76,37 +76,44 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const init = async () => {
       const complete = await isLockSetupComplete()
       setSetupComplete(complete)
+
+      let shouldLock = false
       if (complete) {
         const enabled = await isLockEnabled()
         console.log('[Layout] isLockEnabled =', enabled)
-        if (enabled) setLocked(true)
+        if (enabled) shouldLock = true
       }
+
       setLockReady(true)
 
-      // After lock init, check cloud sync status
-      if (!locked) {
-        try {
-          const syncSettings = await getCloudSyncSettings()
-          if (syncSettings.enabled && syncSettings.filePath) {
-            const status = await checkCloudSyncStatus(syncSettings.filePath)
-            if (status === 'newer') {
-              const wantsSync = window.confirm(
-                'A newer cloud backup was found. Would you like to sync now?'
-              )
-              if (wantsSync) {
-                const passphrase = getSessionPassphrase()
-                if (passphrase) {
-                  await performSync(syncSettings.filePath)
-                  window.alert('Cloud sync completed successfully.')
-                } else {
-                  window.alert('Please enter your PIN to unlock the cloud sync password in Setup > Cloud Sync.')
-                }
+      if (shouldLock) {
+        setLocked(true)
+        // Skip all background checks while the app is locked
+        return
+      }
+
+      // After lock init, check cloud sync status (only when NOT locked)
+      try {
+        const syncSettings = await getCloudSyncSettings()
+        if (syncSettings.enabled && syncSettings.filePath) {
+          const status = await checkCloudSyncStatus(syncSettings.filePath)
+          if (status === 'newer') {
+            const wantsSync = window.confirm(
+              'A newer cloud backup was found. Would you like to sync now?'
+            )
+            if (wantsSync) {
+              const passphrase = getSessionPassphrase()
+              if (passphrase) {
+                await performSync(syncSettings.filePath)
+                window.alert('Cloud sync completed successfully.')
+              } else {
+                window.alert('Please enter your PIN to unlock the cloud sync password in Setup > Cloud Sync.')
               }
             }
           }
-        } catch (e) {
-          console.error('[Layout] Cloud sync check failed:', e)
         }
+      } catch (e) {
+        console.error('[Layout] Cloud sync check failed:', e)
       }
     }
     init()
@@ -163,8 +170,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {setupComplete === false && <FirstTimeLockSetup onComplete={handleSetupComplete} />}
       {lockReady && locked && <AppLock onUnlock={handleUnlock} />}
 
-      <UpdateStatus />
-      {isNativePlatform() && <MobileUpdatePrompt />}
+      {!locked && <UpdateStatus />}
+      {isNativePlatform() && !locked && <MobileUpdatePrompt />}
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

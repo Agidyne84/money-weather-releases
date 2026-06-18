@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.35",
-    "versionCode":  10135,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.35/app-release.apk",
+    "version":  "1.1.36",
+    "versionCode":  10136,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.36/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Setup page: Cloud Sync is now on a card and pinned at the top. Desktop updater: gracefully handles missing latest.yml with a friendly message instead of an error dialog."
+    "releaseNotes":  "App lock improvements: PIN entry now accepts keyboard input on desktop. Biometric unlock is available on every lock screen. Background processes (cloud sync checks, update prompts) are paused while the lock screen is visible."
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { verifyPassword, isBiometricEnabled, isBiometricAvailable, authenticateWithBiometric } from '../services/lockService'
 
 interface AppLockProps {
@@ -11,9 +11,61 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin }) => {
   const [error, setError] = useState(false)
   const [biometricReady, setBiometricReady] = useState(false)
 
-  // When PIN is required for encryption (e.g. saving cloud sync password),
-  // biometric alone is not sufficient — we need the actual PIN.
-  const pinRequired = !!onUnlockWithPin
+  const pinRef = useRef(pin)
+  pinRef.current = pin
+  const onUnlockRef = useRef(onUnlock)
+  onUnlockRef.current = onUnlock
+  const onUnlockWithPinRef = useRef(onUnlockWithPin)
+  onUnlockWithPinRef.current = onUnlockWithPin
+
+  // Desktop keyboard support
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key >= '0' && e.key <= '9') {
+        e.preventDefault()
+        const nextPin = pinRef.current + e.key
+        if (nextPin.length > 6) return
+        setError(false)
+        setPin(nextPin)
+        if (nextPin.length >= 4) {
+          verifyPassword(nextPin).then((ok) => {
+            if (ok) {
+              setPin('')
+              onUnlockWithPinRef.current?.(nextPin)
+              onUnlockRef.current()
+            } else if (nextPin.length >= 6) {
+              setError(true)
+              setPin('')
+            }
+          })
+        }
+      } else if (e.key === 'Backspace') {
+        e.preventDefault()
+        setError(false)
+        setPin((p) => p.slice(0, -1))
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        const current = pinRef.current
+        if (current.length < 4) return
+        verifyPassword(current).then((ok) => {
+          if (ok) {
+            setPin('')
+            onUnlockWithPinRef.current?.(current)
+            onUnlockRef.current()
+          } else {
+            setError(true)
+            setPin('')
+          }
+        })
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        setError(false)
+        setPin('')
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   const handleBiometric = useCallback(async () => {
     const ok = await authenticateWithBiometric()
@@ -30,16 +82,16 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin }) => {
     const checkBio = async () => {
       const bioEnabled = await isBiometricEnabled()
       const bioAvailable = await isBiometricAvailable()
-      const ready = bioEnabled && bioAvailable && !pinRequired
+      const ready = bioEnabled && bioAvailable
       if (!cancelled) setBiometricReady(ready)
-      // Auto-trigger biometric prompt if enabled (only when PIN is not required)
+      // Auto-trigger biometric prompt if enabled
       if (ready && !cancelled) {
         setTimeout(() => handleBiometric(), 400)
       }
     }
     checkBio()
     return () => { cancelled = true }
-  }, [handleBiometric, pinRequired])
+  }, [handleBiometric])
 
   const handleDigit = useCallback((digit: string) => {
     if (pin.length >= 6) return
