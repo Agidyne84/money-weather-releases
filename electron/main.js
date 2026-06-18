@@ -267,8 +267,19 @@ function createWindow() {
         {
           label: 'Check for Updates',
           click: () => {
+            if (isCheckingForUpdate) {
+              dialog.showMessageBox(mainWindow, {
+                type: 'info',
+                title: 'Checking for Updates',
+                message: 'An update check is already in progress.',
+                buttons: ['OK'],
+              }).catch(() => {});
+              return;
+            }
             console.log('[Updater] Manual check triggered from menu');
+            isCheckingForUpdate = true;
             autoUpdater.checkForUpdates().catch((err) => {
+              isCheckingForUpdate = false;
               const is404 = err.statusCode === 404 || err.message?.includes('404') || err.message?.includes('latest.yml');
               if (is404) {
                 console.log('[Updater] No desktop update channel configured (latest.yml not found). Skipping update check.');
@@ -362,6 +373,7 @@ ipcMain.handle('app:version', () => {
 
 // ── Auto-updater ─────────────────────────────────────────────────────────────
 let pendingInstallOnQuit = false;
+let isCheckingForUpdate = false;
 
 function setupAutoUpdaterHandlers() {
   // Auto-download immediately when an update is found; install on quit
@@ -369,13 +381,21 @@ function setupAutoUpdaterHandlers() {
   autoUpdater.autoInstallOnAppQuit = false; // we handle install-on-quit manually to show NSIS UI
 
   autoUpdater.on('update-available', (info) => {
+    isCheckingForUpdate = false;
     console.log('[Updater] Update available:', info.version, '— downloading silently');
     // Show taskbar progress bar so user knows something is happening
     if (mainWindow) mainWindow.setProgressBar(2); // indeterminate
   });
 
   autoUpdater.on('update-not-available', () => {
+    isCheckingForUpdate = false;
     console.log('[Updater] App is up to date.');
+  });
+
+  autoUpdater.on('error', (err) => {
+    isCheckingForUpdate = false;
+    console.error('[Updater] Error:', err.message);
+    if (mainWindow) mainWindow.setProgressBar(-1);
   });
 
   autoUpdater.on('download-progress', (progress) => {
@@ -399,7 +419,9 @@ function setupAutoUpdaterHandlers() {
 
   // Check for updates shortly after launch
   setTimeout(() => {
+    isCheckingForUpdate = true;
     autoUpdater.checkForUpdates().catch((err) => {
+      isCheckingForUpdate = false;
       const is404 = err.statusCode === 404 || err.message?.includes('404') || err.message?.includes('latest.yml');
       if (is404) {
         console.log('[Updater] No desktop update channel configured (latest.yml not found).');
