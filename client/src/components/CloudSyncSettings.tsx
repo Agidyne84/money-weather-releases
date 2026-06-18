@@ -5,9 +5,11 @@ import {
   getCloudSyncSettings,
   setCloudSyncEnabled,
   setCloudSyncPath,
+  setCloudSyncMode,
   checkCloudSyncStatus,
   pullCloudBackup,
   pushCloudBackup,
+  type CloudSyncMode,
 } from '../services/syncEngine'
 import {
   hasStoredPassphrase,
@@ -28,7 +30,8 @@ const CloudSyncSettings: React.FC = () => {
     enabled: boolean
     filePath: string | null
     lastSyncTimestamp: string | null
-  }>({ enabled: false, filePath: null, lastSyncTimestamp: null })
+    syncMode: CloudSyncMode
+  }>({ enabled: false, filePath: null, lastSyncTimestamp: null, syncMode: 'manual' })
 
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -43,6 +46,7 @@ const CloudSyncSettings: React.FC = () => {
   const [showAppLock, setShowAppLock] = useState(false)
   const [appLockAction, setAppLockAction] = useState<'save-password' | 'verify-file' | 'unlock-sync'>('save-password')
   const [syncMode, setSyncMode] = useState<SyncMode>('pull')
+  const [fileMissing, setFileMissing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [fileStatus, setFileStatus] = useState<string>('')
 
@@ -64,6 +68,8 @@ const CloudSyncSettings: React.FC = () => {
     setHasPassword(hp)
     if (s.enabled && s.filePath) {
       const status = await checkCloudSyncStatus(s.filePath)
+      const isMissing = status === 'missing'
+      setFileMissing(isMissing)
       const statusMap: Record<string, string> = {
         newer: 'Cloud backup is newer than local',
         older: 'Local is newer than cloud backup',
@@ -74,6 +80,7 @@ const CloudSyncSettings: React.FC = () => {
       setFileStatus(statusMap[status] || 'Unknown')
     } else {
       setFileStatus('')
+      setFileMissing(false)
     }
   }, [])
 
@@ -87,9 +94,16 @@ const CloudSyncSettings: React.FC = () => {
     setSettings(prev => ({ ...prev, enabled: next }))
     if (!next) {
       setFileStatus('')
+      setFileMissing(false)
     } else {
       loadSettings()
     }
+  }
+
+  const handleSyncModeToggle = async () => {
+    const next: CloudSyncMode = settings.syncMode === 'auto' ? 'manual' : 'auto'
+    await setCloudSyncMode(next)
+    setSettings(prev => ({ ...prev, syncMode: next }))
   }
 
   const createInitialBackup = async (filePath: string) => {
@@ -492,14 +506,52 @@ const CloudSyncSettings: React.FC = () => {
 
       {settings.enabled && (
         <>
+          {/* Auto / Manual Toggle */}
+          <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+            <div>
+              <p className="text-sm font-medium text-gray-700">Sync Mode</p>
+              <p className="text-xs text-gray-500">
+                {settings.syncMode === 'auto'
+                  ? 'Local changes push automatically; cloud changes pull automatically.'
+                  : 'You control when to push or pull.'}
+              </p>
+            </div>
+            <button
+              onClick={handleSyncModeToggle}
+              disabled={fileMissing}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                settings.syncMode === 'auto' ? 'bg-blue-600' : 'bg-gray-200'
+              } disabled:opacity-40`}
+              title="Toggle Auto / Manual"
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  settings.syncMode === 'auto' ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
           {/* File Path Card */}
           <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-700">Backup File</p>
-                <p className="text-xs text-gray-500 break-all">{settings.filePath || 'Not set'}</p>
+            {fileMissing ? (
+              <div className="bg-red-50 border border-red-200 rounded-md p-3 space-y-2">
+                <p className="text-sm font-semibold text-red-800">Cloud Backup File Missing</p>
+                <p className="text-xs text-red-700">
+                  The backup file could not be found at the configured path. It may have been moved or deleted.
+                </p>
+                <p className="text-xs text-red-700 break-all">
+                  Path: {settings.filePath || 'Not set'}
+                </p>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-700">Backup File</p>
+                  <p className="text-xs text-gray-500 break-all">{settings.filePath || 'Not set'}</p>
+                </div>
+              </div>
+            )}
 
             <div className="flex gap-2">
               <button
@@ -516,7 +568,7 @@ const CloudSyncSettings: React.FC = () => {
               </button>
             </div>
 
-            {settings.filePath && fileStatus && (
+            {!fileMissing && settings.filePath && fileStatus && (
               <p className="text-xs text-gray-500">Status: {fileStatus}</p>
             )}
 
@@ -527,39 +579,51 @@ const CloudSyncSettings: React.FC = () => {
             )}
           </div>
 
-          {/* Push / Pull Toggle + Sync Now */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-              <span className="text-sm font-medium text-gray-700">
-                {syncMode === 'push' ? 'Push to Cloud' : 'Pull from Cloud'}
-              </span>
+          {/* Push / Pull Toggle + Sync Now (Manual mode only, hidden when file missing) */}
+          {settings.syncMode === 'manual' && !fileMissing && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                <span className="text-sm font-medium text-gray-700">
+                  {syncMode === 'push' ? 'Push to Cloud' : 'Pull from Cloud'}
+                </span>
+                <button
+                  onClick={() => setSyncMode(syncMode === 'push' ? 'pull' : 'push')}
+                  className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors bg-blue-600"
+                  title="Toggle Push / Pull"
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      syncMode === 'pull' ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
               <button
-                onClick={() => setSyncMode(syncMode === 'push' ? 'pull' : 'push')}
-                className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors bg-blue-600"
-                title="Toggle Push / Pull"
+                onClick={doSync}
+                disabled={loading || !canSync}
+                className="w-full px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    syncMode === 'pull' ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
+                {loading ? 'Syncing...' : 'Sync Now'}
               </button>
+
+              {!canSync && (
+                <p className="text-xs text-gray-500 text-center">
+                  {!settings.filePath ? 'Set a backup file path to enable sync.' : 'Set a password to enable sync.'}
+                </p>
+              )}
             </div>
+          )}
 
-            <button
-              onClick={doSync}
-              disabled={loading || !canSync}
-              className="w-full px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Syncing...' : 'Sync Now'}
-            </button>
-
-            {!canSync && (
-              <p className="text-xs text-gray-500 text-center">
-                {!settings.filePath ? 'Set a backup file path to enable sync.' : 'Set a password to enable sync.'}
+          {/* Auto mode info */}
+          {settings.syncMode === 'auto' && !fileMissing && (
+            <div className="bg-blue-50 rounded-md p-3">
+              <p className="text-sm text-blue-800 font-medium">Automatic Sync Active</p>
+              <p className="text-xs text-blue-700 mt-1">
+                Your data is kept in sync automatically. Local changes are pushed to the cloud shortly after you make them, and cloud changes are pulled automatically.
               </p>
-            )}
-          </div>
+            </div>
+          )}
         </>
       )}
 

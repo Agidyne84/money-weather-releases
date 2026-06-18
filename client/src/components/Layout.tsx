@@ -12,6 +12,7 @@ import { isLockEnabled, isLockSetupComplete } from '../services/lockService'
 import { getCloudSyncSettings, checkCloudSyncStatus, performSync } from '../services/syncEngine'
 import { isDirty } from '../services/dirtyTracker'
 import { getSessionPassphrase } from '../services/securePassphrase'
+import { useAutoSync } from '../hooks/useAutoSync'
 
 function isNativePlatform(): boolean {
   return Capacitor.isNativePlatform()
@@ -164,6 +165,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
 
   const isActive = (path: string) => location.pathname === path
+
+  useAutoSync(locked)
 
   return (
     <div className="min-h-screen bg-gray-50">
