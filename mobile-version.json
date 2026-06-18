@@ -1,7 +1,7 @@
 {
-    "version": "1.1.45",
-    "versionCode": 10145,
-    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.45/app-release.apk",
+    "version": "1.1.46",
+    "versionCode": 10146,
+    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.46/app-release.apk",
     "force":  false,
-    "releaseNotes": "Fixes: Removed default Capacitor launcher icon that was overriding the custom Money Weather icon on Android home screen and app drawer."
+    "releaseNotes": "Fixes: Simplified to legacy PNG launcher icons only - removed adaptive icon XML that was causing compatibility issues. Icon should now appear on all Android devices and launchers."
 }
