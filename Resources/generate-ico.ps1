@@ -15,6 +15,10 @@ $srcH = $src.Height
 $cropSize = [Math]::Min($srcW, $srcH)
 $cropX = [Math]::Floor(($srcW - $cropSize) / 2)
 $cropY = [Math]::Floor(($srcH - $cropSize) / 2)
+$srcRect = New-Object System.Drawing.Rectangle($cropX, $cropY, $cropSize, $cropSize)
+
+# Icon content scale (0.72 = 72% fill, 14% padding on each side)
+$scale = 0.72
 
 # Sizes to include in ICO
 $sizes = @(16, 32, 48, 64, 128, 256)
@@ -26,7 +30,10 @@ foreach ($size in $sizes) {
     $g = [System.Drawing.Graphics]::FromImage($bmp)
     $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $g.DrawImage($src, 0, 0, $size, $size)
+    $drawSize = [Math]::Floor($size * $scale)
+    $offset = [Math]::Floor(($size - $drawSize) / 2)
+    $destRect = New-Object System.Drawing.Rectangle($offset, $offset, $drawSize, $drawSize)
+    $g.DrawImage($src, $destRect, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
     
     $ms = New-Object System.IO.MemoryStream
     $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)

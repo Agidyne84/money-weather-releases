@@ -579,16 +579,16 @@ const CloudSyncSettings: React.FC = () => {
             <div className="space-y-2">
               <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
                 <span className="text-sm font-medium text-gray-700">
-                  {syncMode === 'push' ? 'Push to Cloud' : 'Pull from Cloud'}
+                  {syncMode === 'pull' ? 'Pull from Cloud' : 'Push to Cloud'}
                 </span>
                 <button
-                  onClick={() => setSyncMode(syncMode === 'push' ? 'pull' : 'push')}
+                  onClick={() => setSyncMode(syncMode === 'pull' ? 'push' : 'pull')}
                   className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors bg-blue-600"
                   title="Toggle Push / Pull"
                 >
                   <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      syncMode === 'pull' ? 'translate-x-6' : 'translate-x-1'
+                      syncMode === 'pull' ? 'translate-x-1' : 'translate-x-6'
                     }`}
                   />
                 </button>

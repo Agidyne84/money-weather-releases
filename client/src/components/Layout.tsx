@@ -186,7 +186,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               )}
             </div>
             <img
-              src="/icon-64.png"
+              src={typeof window !== 'undefined' && window.location.protocol === 'file:' ? new URL('icon-64.png', window.location.href).href : '/icon-64.png'}
               alt="Money Weather"
               className="h-10 w-10 object-contain"
             />

@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.39",
-    "versionCode":  10139,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.39/app-release.apk",
+    "version":  "1.1.40",
+    "versionCode":  10140,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.40/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Fixes: Dashboard data loads correctly on mobile first open (fixed DB race condition). Cloud Sync Mode moved below Backup File. App icons regenerated for desktop and mobile. App icon added to header. Header now stays visible while scrolling."
+    "releaseNotes":  "Fixes: Push/Pull toggle direction flipped (Pull=left, Push=right). Desktop installer remembers All Users vs Only Me setting and offers 'Open app' checkbox checked by default. All app icons regenerated with padding to prevent cutoff. Desktop banner icon now loads correctly."
 }
