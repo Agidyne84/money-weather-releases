@@ -378,7 +378,11 @@ let isCheckingForUpdate = false;
 function setupAutoUpdaterHandlers() {
   // Auto-download immediately when an update is found; install on quit
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = false; // we handle install-on-quit manually to show NSIS UI
+  // autoInstallOnAppQuit MUST be false.  The default behavior runs the NSIS
+  // installer silently, which suppresses the progress page and finish page.
+  // We handle install-on-quit manually with quitAndInstall(false, true) so
+  // the wizard UI (progress + finish with Run checkbox) remains visible.
+  autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on('update-available', (info) => {
     isCheckingForUpdate = false;
@@ -500,9 +504,10 @@ autoUpdater.on('update-downloaded', (info) => {
     defaultId: 0,
   }).then(({ response }) => {
     if (response === 0) {
-      // Restart Now — show NSIS wizard (not silent) so the finish page
-      // with the checked "Open Money Weather" option is visible.
-      // isForceRunAfter=true ensures app restarts after install.
+      // CRITICAL: isSilent MUST be false so the NSIS wizard shows the
+      // progress page and the finish page with the checked "Run Money
+      // Weather" checkbox.  Setting isSilent=true suppresses ALL UI.
+      // isForceRunAfter=true ensures the app restarts after install.
       autoUpdater.quitAndInstall(false, true);
     } else {
       // "Install on Next Launch" — flag so we call quitAndInstall on next quit
@@ -548,6 +553,8 @@ app.on('before-quit', () => {
   if (pendingInstallOnQuit) {
     pendingInstallOnQuit = false;
     console.log('[Updater] Running installer on quit');
+    // CRITICAL: isSilent=false — same reasoning as the Restart Now path.
+    // The NSIS wizard must be visible so the finish page appears.
     autoUpdater.quitAndInstall(false, true);
     return;
   }
