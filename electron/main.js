@@ -487,35 +487,13 @@ autoUpdater.on('update-downloaded', (info) => {
     mainWindow.webContents.send('update-downloaded');
   }
 
-  // Ensure we have a valid window reference for dialog parent
-  const dialogParent = mainWindow || BrowserWindow.getFocusedWindow() || undefined;
-
-  // Notify user and offer to restart now or on next launch
-  dialog.showMessageBox(dialogParent, {
-    type: 'info',
-    title: 'Update Ready to Install',
-    message: `Money Weather ${info.version} has been downloaded.`,
-    detail: 'Restart now to apply the update, or it will be installed when you close the app.',
-    buttons: ['Restart Now', 'Install on Next Launch'],
-    defaultId: 0,
-  }).then(({ response }) => {
-    if (response === 0) {
-      // Restart Now — silent install and restart immediately
-      // isSilent=true runs NSIS silently (no wizard clicks needed)
-      // isForceRunAfter=true ensures app restarts after install
-      autoUpdater.quitAndInstall(true, true);
-    } else {
-      // "Install on Next Launch" — flag so we call quitAndInstall on next quit
-      pendingInstallOnQuit = true;
-      dialog.showMessageBox(dialogParent, {
-        type: 'warning',
-        title: 'Update Ready',
-        message: 'The update will install silently when you close the app.',
-        detail: 'Money Weather will restart automatically when the install completes.',
-        buttons: ['OK'],
-      }).catch(() => {});
-    }
-  });
+  // Automatically install the update without prompting the user.
+  // isSilent=false lets the NSIS finish page appear so the
+  // "Open Money Weather" checkbox is visible and checked.
+  // isForceRunAfter=true restarts the app after the installer finishes.
+  setTimeout(() => {
+    autoUpdater.quitAndInstall(false, true);
+  }, 2500);
 });
 
 app.whenReady().then(async () => {
@@ -547,8 +525,8 @@ app.on('activate', () => {
 app.on('before-quit', () => {
   if (pendingInstallOnQuit) {
     pendingInstallOnQuit = false;
-    console.log('[Updater] Running silent installer on quit');
-    autoUpdater.quitAndInstall(true, true);
+    console.log('[Updater] Running installer on quit');
+    autoUpdater.quitAndInstall(false, true);
     return;
   }
   stopServer();

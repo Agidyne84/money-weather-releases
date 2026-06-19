@@ -1,7 +1,7 @@
 {
-    "version": "1.1.47",
-    "versionCode": 10147,
-    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.47/app-release.apk",
+    "version": "1.1.48",
+    "versionCode": 10148,
+    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.48/app-release.apk",
     "force":  false,
-    "releaseNotes": "Fixes: Forecast start date is now stored in the database and synced via cloud backup. When the backup file changes on another device, a conflict dialog prompts you to Accept (pull remote) or Keep Local (push). Accepting updates all data and controls including the forecast start date."
+    "releaseNotes": "Fixes: Desktop installer now shows the NSIS finish page during updates with the Open Money Weather checkbox visible. Auto-installs without prompting for settings."
 }

@@ -78,7 +78,7 @@ async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: num
       const response = await CapacitorHttp.get({
         url,
         headers: {
-          'User-Agent': 'MoneyWeather-App/1.1.47',
+          'User-Agent': 'MoneyWeather-App/1.1.48',
           'Accept': 'application/json',
           'Cache-Control': 'no-cache',
         },
