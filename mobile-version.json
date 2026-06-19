@@ -3,5 +3,5 @@
     "versionCode": 10148,
     "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.48/app-release.apk",
     "force":  false,
-    "releaseNotes": "Fixes: Desktop installer now shows the NSIS finish page during updates with the Open Money Weather checkbox visible. Auto-installs without prompting for settings."
+    "releaseNotes": "Fixes: Desktop installer now shows the NSIS finish page with the checked Open Money Weather option during updates. Forecast start date sync and conflict dialog from v1.1.47 are included."
 }
