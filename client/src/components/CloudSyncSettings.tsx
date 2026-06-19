@@ -45,7 +45,7 @@ const CloudSyncSettings: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [passwordModalContext, setPasswordModalContext] = useState<PasswordModalContext>('create')
-  const [pendingPasswordSave, setPendingPasswordSave] = useState(false)
+  const [pendingAction, setPendingAction] = useState<'refresh-sync' | 'force-pull' | 'manual-sync' | 'save-password' | 'verify-file' | null>(null)
   const [showAppLock, setShowAppLock] = useState(false)
   const [appLockAction, setAppLockAction] = useState<'save-password' | 'verify-file' | 'unlock-sync'>('save-password')
   const [syncMode, setSyncMode] = useState<SyncMode>('pull')
@@ -251,7 +251,7 @@ const CloudSyncSettings: React.FC = () => {
       if (ok) {
         setShowPasswordModal(false)
         setAppLockAction('verify-file')
-        setPendingPasswordSave(true)
+        setPendingAction('verify-file')
         setShowAppLock(true)
       } else {
         setVerifyError(true)
@@ -274,13 +274,13 @@ const CloudSyncSettings: React.FC = () => {
     }
     setShowPasswordModal(false)
     setAppLockAction('save-password')
-    setPendingPasswordSave(true)
+    setPendingAction('save-password')
     setShowAppLock(true)
   }
 
   const handleAppLockUnlock = () => {
     setShowAppLock(false)
-    setPendingPasswordSave(false)
+    setPendingAction(null)
     setAppLockAction('save-password')
   }
 
@@ -368,7 +368,7 @@ const CloudSyncSettings: React.FC = () => {
   }
 
   const handleAppLockUnlockWithPin = async (pin: string) => {
-    if (!pendingPasswordSave) return
+    if (!pendingAction) return
     setLoading(true)
     try {
       // Unlocking passphrase for sync after app restart
@@ -379,7 +379,14 @@ const CloudSyncSettings: React.FC = () => {
           return
         }
         setMessage({ type: 'success', text: 'Cloud sync password unlocked.' })
-        await doSync()
+        // Execute the specific sync action that was pending when the PIN prompt appeared
+        if (pendingAction === 'refresh-sync') {
+          await runRefreshSync()
+        } else if (pendingAction === 'force-pull') {
+          await runForcePull()
+        } else if (pendingAction === 'manual-sync') {
+          await executeManualSync()
+        }
         return
       }
 
@@ -421,7 +428,7 @@ const CloudSyncSettings: React.FC = () => {
       console.error('[CloudSync] AppLock save failed:', err)
     } finally {
       setLoading(false)
-      setPendingPasswordSave(false)
+      setPendingAction(null)
       setShowAppLock(false)
     }
   }
@@ -438,7 +445,7 @@ const CloudSyncSettings: React.FC = () => {
       const hasStored = await hasStoredPassphrase()
       if (hasStored) {
         setAppLockAction('unlock-sync')
-        setPendingPasswordSave(true)
+        setPendingAction('manual-sync')
         setShowAppLock(true)
         return
       }
@@ -446,6 +453,14 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
+    await executeManualSync()
+  }
+
+  const executeManualSync = async () => {
+    if (!settings.filePath) {
+      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
+      return
+    }
     setLoading(true)
     setMessage(null)
     try {
@@ -478,7 +493,7 @@ const CloudSyncSettings: React.FC = () => {
       const hasStored = await hasStoredPassphrase()
       if (hasStored) {
         setAppLockAction('unlock-sync')
-        setPendingPasswordSave(true)
+        setPendingAction('refresh-sync')
         setShowAppLock(true)
         return
       }
@@ -486,6 +501,14 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
+    await runRefreshSync()
+  }
+
+  const runRefreshSync = async () => {
+    if (!settings.filePath) {
+      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
+      return
+    }
     setLoading(true)
     setMessage(null)
     try {
@@ -513,7 +536,7 @@ const CloudSyncSettings: React.FC = () => {
       const hasStored = await hasStoredPassphrase()
       if (hasStored) {
         setAppLockAction('unlock-sync')
-        setPendingPasswordSave(true)
+        setPendingAction('force-pull')
         setShowAppLock(true)
         return
       }
@@ -521,6 +544,14 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
+    await runForcePull()
+  }
+
+  const runForcePull = async () => {
+    if (!settings.filePath) {
+      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
+      return
+    }
     setLoading(true)
     setMessage(null)
     try {

@@ -1,7 +1,7 @@
 {
-    "version": "1.1.51",
-    "versionCode": 10151,
-    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.51/app-release.apk",
+    "version": "1.1.52",
+    "versionCode": 10152,
+    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.52/app-release.apk",
     "force":  false,
-    "releaseNotes": "Fixes: Added Force Pull from Cloud button to bypass timestamp checks when cloud provider sync delays cause stale local file. Added cloud file timestamp debug display. Ensured Android APK includes latest web assets via cap sync. Desktop installer fix from v1.1.50 retained."
+    "releaseNotes": "Fixes: Force Pull and Refresh Cloud Sync buttons now correctly execute their intended action after PIN unlock. Previously, all three sync buttons fell back to manual push/pull after PIN entry. Desktop: ensured copy-deps.ps1 runs before electron build so server schema.sql and latest client assets are included. Desktop installer fix from v1.1.50 retained."
 }
