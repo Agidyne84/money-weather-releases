@@ -1,7 +1,7 @@
 ; =============================================================================
 ; CRITICAL: Money Weather NSIS installer custom script
 ; =============================================================================
-; This script controls the update/install behavior.  Getting this wrong causes
+; This script controls the update/install behavior. Getting this wrong causes
 ; the "Choose Installation Options" page to appear on EVERY update, forcing
 ; the user to re-confirm per-user vs per-machine.
 ;
@@ -11,65 +11,51 @@
 ;   3. Show the "Completing Money Weather Setup" finish page with the
 ;      "Run Money Weather" checkbox CHECKED.
 ;
-; TECHNICAL REQUIREMENTS:
-;   - electron-builder: oneClick=false, perMachine=false, runAfterFinish=true
-;   - main.js: autoUpdater.quitAndInstall(false, true)  (isSilent=false)
-;   - THIS FILE must set $MultiUser.InstallMode in customInit so the MultiUser
-;     plugin skips the install-mode page automatically.
+; HOW IT WORKS:
+;   electron-builder's initMultiUser macro (assistedInstaller.nsh) already
+;   detects previous installations from the uninstall registry and sets:
+;     $hasPerMachineInstallation = "1" or "0"
+;     $hasPerUserInstallation    = "1" or "0"
+;     $installMode               = "all" or "CurrentUser"
 ;
-;   DO NOT use a temporary register like $R1 — the MultiUser plugin ONLY
-;   respects $MultiUser.InstallMode.  If that variable is empty, the page
-;   will ALWAYS appear.
+;   The install-mode page pre-function (multiUserUi.nsh) calls customInstallMode
+;   (if defined). Setting $isForceMachineInstall or $isForceCurrentInstall to
+;   "1" makes the page call setInstallModePerAllUsers/setInstallModePerUser
+;   and then ABORT — skipping the page entirely.
 ;
-;   DO NOT manually call SetShellVarContext here — the MultiUser plugin
-;   handles it based on $MultiUser.InstallMode.
+;   DO NOT manually call SetShellVarContext here — the setInstallMode macros
+;   handle it correctly.
 ; =============================================================================
 
 !macro customInit
+  ; initMultiUser already detects previous installations from the uninstall
+  ; registry and sets $installMode, $hasPerMachineInstallation and
+  ; $hasPerUserInstallation. No extra init work is needed here.
+!macroend
+
+!macro customInstallMode
   ; ---------------------------------------------------------------------------
-  ; Try to restore the install mode from a previous installation.
-  ; We store a simple "machine" / "user" value in HKCU; here we translate it
-  ; into the NSIS MultiUser variable $MultiUser.InstallMode so the plugin
-  ; skips the install-mode selection page.
+  ; If a previous installation was detected by initMultiUser, force the
+  ; install-mode page to skip itself and reuse the already-selected mode.
+  ; This prevents the user from having to re-confirm per-user vs per-machine
+  ; during every update.
   ; ---------------------------------------------------------------------------
-  ReadRegStr $R0 HKCU "Software\com.budgetapp.desktop" "InstallMode"
-  StrCmp $R0 "machine" applyMachine
-  StrCmp $R0 "user" applyUser
-
-  ; No saved mode found — try to auto-detect from an existing installation.
-  ReadRegStr $R0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\com.budgetapp.desktop" "InstallLocation"
-  StrCmp $R0 "" 0 applyMachine
-
-  ReadRegStr $R0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\com.budgetapp.desktop" "InstallLocation"
-  StrCmp $R0 "" done
-  Goto applyUser
-
-applyMachine:
-  ; Setting $MultiUser.InstallMode to "AllUsers" tells the MultiUser plugin
-  ; the mode is already decided → the install-mode page is SKIPPED.
-  StrCpy $MultiUser.InstallMode "AllUsers"
-  Goto done
-
-applyUser:
-  ; Setting $MultiUser.InstallMode to "CurrentUser" tells the MultiUser plugin
-  ; the mode is already decided → the install-mode page is SKIPPED.
-  StrCpy $MultiUser.InstallMode "CurrentUser"
-  Goto done
-
-done:
+  ${if} $hasPerMachineInstallation == "1"
+    StrCpy $isForceMachineInstall "1"
+  ${elseif} $hasPerUserInstallation == "1"
+    StrCpy $isForceCurrentInstall "1"
+  ${endif}
 !macroend
 
 !macro customInstall
   ; ---------------------------------------------------------------------------
-  ; Persist the install mode chosen by the MultiUser plugin so the NEXT update
-  ; can skip the selection page.  We read $MultiUser.InstallMode (not $R1)
-  ; because the plugin sets that variable when the user actually picks a mode
-  ; on a fresh install.
+  ; Persist the install mode choice for the NEXT update.
+  ; $installMode is set by setInstallModePerUser ("CurrentUser") or
+  ; setInstallModePerAllUsers ("all").
   ; ---------------------------------------------------------------------------
-  StrCmp $MultiUser.InstallMode "AllUsers" 0 writeUser
+  ${if} $installMode == "all"
     WriteRegStr HKCU "Software\com.budgetapp.desktop" "InstallMode" "machine"
-    Goto installDone
-writeUser:
+  ${else}
     WriteRegStr HKCU "Software\com.budgetapp.desktop" "InstallMode" "user"
-installDone:
+  ${endif}
 !macroend

@@ -1,7 +1,7 @@
 {
-    "version": "1.1.49",
-    "versionCode": 10149,
-    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.49/app-release.apk",
+    "version": "1.1.50",
+    "versionCode": 10150,
+    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.50/app-release.apk",
     "force":  false,
-    "releaseNotes": "Fixes: Added Refresh Cloud Sync button on Setup page for manual sync trigger. Desktop installer shows NSIS finish page with Run checkbox on update. Forecast start date sync and conflict dialog included."
+    "releaseNotes": "Fixes: Desktop installer now properly skips the install-mode selection page during updates by setting $MultiUser.InstallMode in installer.nsh. Shows progress page and finish page with checked Run Money Weather option. Refresh Cloud Sync button, forecast start date sync, and conflict dialog included."
 }

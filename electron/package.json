@@ -1,6 +1,6 @@
 {
   "name": "budget-app-electron",
-  "version": "1.1.49",
+  "version": "1.1.50",
   "description": "Money Weather - Budget App Electron Wrapper",
   "author": "Monroe Engineering",
   "main": "main.js",
@@ -43,19 +43,14 @@
       "signingHashAlgorithms": []
     },
     "nsis": {
-      "_comment_oneClick": "FALSE = wizard mode (shows progress + finish page). TRUE = silent self-extractor (no UI). Must be FALSE so the Run checkbox appears.",
       "oneClick": false,
-      "_comment_allowToChangeInstallationDirectory": "FALSE = no directory page; installer reuses previous path from uninstall registry.",
       "allowToChangeInstallationDirectory": false,
-      "_comment_perMachine": "FALSE = defaults to per-user; the install-mode page is skipped by installer.nsh setting $MultiUser.InstallMode.",
       "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Money Weather",
       "deleteAppDataOnUninstall": false,
-      "_comment_runAfterFinish": "TRUE = finish page shows checked 'Run Money Weather' checkbox. Must stay TRUE.",
       "runAfterFinish": true,
-      "_comment_include": "installer.nsh sets $MultiUser.InstallMode to skip the install-mode page during updates. DO NOT REMOVE.",
       "include": "build/installer.nsh"
     },
     "publish": [
