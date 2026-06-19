@@ -9,6 +9,8 @@ import {
   checkCloudSyncStatus,
   pullCloudBackup,
   pushCloudBackup,
+  performSync,
+  refreshLocalPreferences,
   type CloudSyncMode,
 } from '../services/syncEngine'
 import {
@@ -454,6 +456,42 @@ const CloudSyncSettings: React.FC = () => {
     }
   }
 
+  const handleRefreshSync = async () => {
+    if (!settings.filePath) {
+      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
+      return
+    }
+
+    // Prompt for PIN if passphrase is not in session memory
+    if (!getSessionPassphrase()) {
+      const hasStored = await hasStoredPassphrase()
+      if (hasStored) {
+        setAppLockAction('unlock-sync')
+        setPendingPasswordSave(true)
+        setShowAppLock(true)
+        return
+      }
+      setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
+      return
+    }
+
+    setLoading(true)
+    setMessage(null)
+    try {
+      const result = await performSync(settings.filePath)
+      if (result.action === 'pulled') {
+        await refreshLocalPreferences()
+        window.dispatchEvent(new CustomEvent('sync:pulled', { detail: result }))
+      }
+      setMessage({ type: result.action === 'error' ? 'error' : 'success', text: result.message })
+      loadSettings()
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const canSync = settings.enabled && !!settings.filePath && hasPassword
 
   const getPasswordModalTitle = () => {
@@ -552,6 +590,17 @@ const CloudSyncSettings: React.FC = () => {
               </p>
             )}
           </div>
+
+          {/* Refresh Cloud Sync — always available */}
+          {!fileMissing && (
+            <button
+              onClick={handleRefreshSync}
+              disabled={loading || !canSync}
+              className="w-full px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Syncing...' : 'Refresh Cloud Sync'}
+            </button>
+          )}
 
           {/* Auto / Manual Toggle */}
           <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">

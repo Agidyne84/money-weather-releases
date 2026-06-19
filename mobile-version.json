@@ -1,7 +1,7 @@
 {
-    "version": "1.1.48",
-    "versionCode": 10148,
-    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.48/app-release.apk",
+    "version": "1.1.49",
+    "versionCode": 10149,
+    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.49/app-release.apk",
     "force":  false,
-    "releaseNotes": "Fixes: Desktop installer now shows the NSIS finish page with the checked Open Money Weather option during updates. Forecast start date sync and conflict dialog from v1.1.47 are included."
+    "releaseNotes": "Fixes: Added Refresh Cloud Sync button on Setup page for manual sync trigger. Desktop installer shows NSIS finish page with Run checkbox on update. Forecast start date sync and conflict dialog included."
 }
