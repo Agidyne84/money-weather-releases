@@ -7,6 +7,7 @@ import {
   setCloudSyncPath,
   setCloudSyncMode,
   checkCloudSyncStatus,
+  getCloudFileInfo,
   pullCloudBackup,
   pushCloudBackup,
   performSync,
@@ -48,6 +49,7 @@ const CloudSyncSettings: React.FC = () => {
   const [showAppLock, setShowAppLock] = useState(false)
   const [appLockAction, setAppLockAction] = useState<'save-password' | 'verify-file' | 'unlock-sync'>('save-password')
   const [syncMode, setSyncMode] = useState<SyncMode>('pull')
+  const [cloudFileInfo, setCloudFileInfo] = useState<{ modifiedAt: string | null; size: number | null }>({ modifiedAt: null, size: null })
   const [fileMissing, setFileMissing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [fileStatus, setFileStatus] = useState<string>('')
@@ -80,9 +82,17 @@ const CloudSyncSettings: React.FC = () => {
         error: 'Error checking cloud backup',
       }
       setFileStatus(statusMap[status] || 'Unknown')
+      // Fetch cloud file metadata for debug display
+      try {
+        const info = await getCloudFileInfo(s.filePath)
+        setCloudFileInfo({ modifiedAt: info.modifiedAt, size: info.size ?? null })
+      } catch {
+        setCloudFileInfo({ modifiedAt: null, size: null })
+      }
     } else {
       setFileStatus('')
       setFileMissing(false)
+      setCloudFileInfo({ modifiedAt: null, size: null })
     }
   }, [])
 
@@ -97,6 +107,7 @@ const CloudSyncSettings: React.FC = () => {
     if (!next) {
       setFileStatus('')
       setFileMissing(false)
+      setCloudFileInfo({ modifiedAt: null, size: null })
     } else {
       loadSettings()
     }
@@ -492,6 +503,43 @@ const CloudSyncSettings: React.FC = () => {
     }
   }
 
+  const handleForcePull = async () => {
+    if (!settings.filePath) {
+      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
+      return
+    }
+
+    if (!getSessionPassphrase()) {
+      const hasStored = await hasStoredPassphrase()
+      if (hasStored) {
+        setAppLockAction('unlock-sync')
+        setPendingPasswordSave(true)
+        setShowAppLock(true)
+        return
+      }
+      setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
+      return
+    }
+
+    setLoading(true)
+    setMessage(null)
+    try {
+      const result = await pullCloudBackup(settings.filePath)
+      if (result.success) {
+        await refreshLocalPreferences()
+        window.dispatchEvent(new CustomEvent('sync:pulled', { detail: result }))
+        setMessage({ type: 'success', text: 'Force pull complete. Data restored from cloud backup.' })
+      } else {
+        setMessage({ type: 'error', text: 'Force pull failed.' })
+      }
+      loadSettings()
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const canSync = settings.enabled && !!settings.filePath && hasPassword
 
   const getPasswordModalTitle = () => {
@@ -593,13 +641,33 @@ const CloudSyncSettings: React.FC = () => {
 
           {/* Refresh Cloud Sync — always available */}
           {!fileMissing && (
-            <button
-              onClick={handleRefreshSync}
-              disabled={loading || !canSync}
-              className="w-full px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Syncing...' : 'Refresh Cloud Sync'}
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={handleRefreshSync}
+                disabled={loading || !canSync}
+                className="w-full px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Syncing...' : 'Refresh Cloud Sync'}
+              </button>
+              <button
+                onClick={handleForcePull}
+                disabled={loading || !canSync}
+                className="w-full px-4 py-2 bg-amber-600 text-white text-sm rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Pull latest data from cloud regardless of timestamps. Use when cloud provider sync delays cause stale local file."
+              >
+                {loading ? 'Syncing...' : 'Force Pull from Cloud'}
+              </button>
+              {/* Debug timestamp display */}
+              {cloudFileInfo.modifiedAt && (
+                <div className="text-xs text-gray-500 bg-gray-50 rounded p-2 space-y-1">
+                  <p>Cloud file modified: {new Date(cloudFileInfo.modifiedAt).toLocaleString()}</p>
+                  {settings.lastSyncTimestamp && (
+                    <p>Last app sync: {new Date(settings.lastSyncTimestamp).toLocaleString()}</p>
+                  )}
+                  <p>Cloud file size: {(cloudFileInfo.size || 0).toLocaleString()} bytes</p>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Auto / Manual Toggle */}

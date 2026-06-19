@@ -1,7 +1,7 @@
 {
-    "version": "1.1.50",
-    "versionCode": 10150,
-    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.50/app-release.apk",
+    "version": "1.1.51",
+    "versionCode": 10151,
+    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.51/app-release.apk",
     "force":  false,
-    "releaseNotes": "Fixes: Desktop installer now properly skips the install-mode selection page during updates by setting $MultiUser.InstallMode in installer.nsh. Shows progress page and finish page with checked Run Money Weather option. Refresh Cloud Sync button, forecast start date sync, and conflict dialog included."
+    "releaseNotes": "Fixes: Added Force Pull from Cloud button to bypass timestamp checks when cloud provider sync delays cause stale local file. Added cloud file timestamp debug display. Ensured Android APK includes latest web assets via cap sync. Desktop installer fix from v1.1.50 retained."
 }
