@@ -15,6 +15,7 @@ import {
   getSessionPassphrase,
 } from './securePassphrase'
 import { isDirty, clearDirty } from './dirtyTracker'
+import { preferencesApi } from './database'
 
 const API_BASE_URL = 'http://localhost:3001/api'
 const isNative = Capacitor.isNativePlatform()
@@ -207,6 +208,25 @@ export async function checkCloudSyncStatus(filePath: string): Promise<'newer' | 
 }
 
 /**
+ * Read user_preferences from the database and sync them into localStorage
+ * so React components that read from localStorage pick up changes after a pull.
+ */
+export async function refreshLocalPreferences(): Promise<void> {
+  try {
+    const prefs = await preferencesApi.getAll()
+    if (prefs['forecast_start_date']) {
+      localStorage.setItem('forecastStartDate', prefs['forecast_start_date'])
+    }
+    if (prefs['forecast_visible_accounts']) {
+      localStorage.setItem('forecastVisibleAccounts', prefs['forecast_visible_accounts'])
+    }
+    console.log('[Sync] Refreshed local preferences from database:', Object.keys(prefs))
+  } catch (err) {
+    console.error('[Sync] Failed to refresh local preferences:', err)
+  }
+}
+
+/**
  * Perform a full sync: pull if cloud is newer, push if local is dirty.
  * Returns the action taken.
  */
@@ -216,6 +236,8 @@ export async function performSync(filePath: string): Promise<{ action: 'pulled' 
 
     if (status === 'newer') {
       const result = await pullCloudBackup(filePath)
+      await refreshLocalPreferences()
+      window.dispatchEvent(new CustomEvent('sync:pulled', { detail: result }))
       return {
         action: 'pulled',
         message: `Pulled ${result.summary.accounts} accounts, ${result.summary.transactions} transactions from cloud.`,
@@ -225,6 +247,7 @@ export async function performSync(filePath: string): Promise<{ action: 'pulled' 
     // If local is dirty or cloud is older/missing, push
     if (status === 'older' || status === 'missing' || isDirty()) {
       const result = await pushCloudBackup(filePath)
+      window.dispatchEvent(new CustomEvent('sync:pushed', { detail: result }))
       return {
         action: 'pushed',
         message: `Pushed backup to cloud (${result.size} bytes).`,

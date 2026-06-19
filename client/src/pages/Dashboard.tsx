@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Account, BalanceForecast, Transaction, LowBalanceAnalysis } from '../types'
-import { accountsApi, transactionsApi, categoriesApi, historyApi } from '../services/database'
+import { accountsApi, transactionsApi, categoriesApi, historyApi, preferencesApi } from '../services/database'
 import { isTransactionOnDate } from '../../../shared/recurrence'
 import { createSafeDate, formatDateForDisplay, formatDateForStorage } from '../utils/dateUtils'
 import { AnalyticsWidget, BalanceForecastChart, SpendingTrendChart } from '../components/analytics'
@@ -14,8 +14,7 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true)
 
   // Chart controls
-  const savedStart = localStorage.getItem('forecastStartDate') || formatDateForStorage(new Date())
-  const [chartStartDate, setChartStartDate] = useState(savedStart)
+  const [chartStartDate, setChartStartDate] = useState(formatDateForStorage(new Date()))
   const [chartMonths, setChartMonths] = useState(3)
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([])
   const [lowBalanceAnalysis, setLowBalanceAnalysis] = useState<LowBalanceAnalysis[]>([])
@@ -31,6 +30,45 @@ const Dashboard: React.FC = () => {
   const [trendSelectedAccountIds, setTrendSelectedAccountIds] = useState<string[]>([])
   const [trendEndDate, setTrendEndDate] = useState(formatDateForStorage(new Date()))
   const [trendMonths, setTrendMonths] = useState(6)
+
+  // Read forecast start date from database preferences on mount, with localStorage fallback
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const prefs = await preferencesApi.getAll()
+        if (prefs['forecast_start_date']) {
+          setChartStartDate(prefs['forecast_start_date'])
+          localStorage.setItem('forecastStartDate', prefs['forecast_start_date'])
+        } else {
+          const fallback = localStorage.getItem('forecastStartDate') || formatDateForStorage(new Date())
+          setChartStartDate(fallback)
+          await preferencesApi.set('forecast_start_date', fallback).catch(() => {})
+        }
+      } catch (e) {
+        console.error('[Dashboard] Failed to read forecast_start_date:', e)
+        const fallback = localStorage.getItem('forecastStartDate') || formatDateForStorage(new Date())
+        setChartStartDate(fallback)
+      }
+    }
+    init()
+  }, [])
+
+  // Listen for sync pulls so we pick up remote start date changes
+  useEffect(() => {
+    const handlePulled = async () => {
+      try {
+        const prefs = await preferencesApi.getAll()
+        if (prefs['forecast_start_date']) {
+          setChartStartDate(prefs['forecast_start_date'])
+          localStorage.setItem('forecastStartDate', prefs['forecast_start_date'])
+        }
+      } catch (e) {
+        console.error('[Dashboard] Failed to refresh start date after sync:', e)
+      }
+    }
+    window.addEventListener('sync:pulled', handlePulled)
+    return () => window.removeEventListener('sync:pulled', handlePulled)
+  }, [])
 
   useEffect(() => {
     loadDashboardData()
@@ -59,8 +97,8 @@ const Dashboard: React.FC = () => {
       setSelectedAccountIds(checkingIds)
 
       // Generate forecast aligned to stored start date
-      const startDate = createSafeDate(savedStart)
-      const endDate = createSafeDate(savedStart)
+      const startDate = createSafeDate(chartStartDate)
+      const endDate = createSafeDate(chartStartDate)
       endDate.setMonth(endDate.getMonth() + chartMonths)
 
       const forecastsData = generateClientBalanceForecast(accountsData, transactionsData, startDate, endDate)
@@ -534,7 +572,7 @@ const Dashboard: React.FC = () => {
               type="date"
               className="input text-xs"
               value={chartStartDate}
-              min={savedStart}
+              min={chartStartDate}
               onChange={e => setChartStartDate(e.target.value)}
             />
             <select

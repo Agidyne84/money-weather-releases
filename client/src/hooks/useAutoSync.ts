@@ -14,8 +14,9 @@ const BACKGROUND_POLL_INTERVAL = 60000 // 60 seconds when tab is hidden
 /**
  * Background auto-sync hook.
  * When cloud sync is set to 'auto' mode and the app is unlocked,
- * periodically checks the cloud backup and syncs if needed:
- *  - Pulls if the cloud backup is newer.
+ * periodically checks the cloud backup:
+ *  - If the cloud backup is newer, dispatches a 'sync:conflict' event
+ *    so the UI can prompt the user to Accept (pull) or Reject (push local).
  *  - Pushes if local data is dirty or the cloud backup is older/missing.
  *
  * Respects the app lock state: pauses entirely while locked.
@@ -24,6 +25,7 @@ const BACKGROUND_POLL_INTERVAL = 60000 // 60 seconds when tab is hidden
 export function useAutoSync(locked: boolean) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const visibleRef = useRef(true)
+  const conflictRef = useRef(false) // prevents duplicate conflict events
 
   useEffect(() => {
     if (locked) {
@@ -58,13 +60,34 @@ export function useAutoSync(locked: boolean) {
         return
       }
 
-      try {
-        const result = await performSync(settings.filePath)
-        if (result.action !== 'none') {
-          console.log('[AutoSync]', result.action, result.message)
+      // If cloud is newer and we haven't already fired a conflict event,
+      // dispatch one so the UI can prompt the user.
+      if (status === 'newer' && !conflictRef.current) {
+        conflictRef.current = true
+        window.dispatchEvent(new CustomEvent('sync:conflict', {
+          detail: { filePath: settings.filePath },
+        }))
+        console.log('[AutoSync] Conflict detected — waiting for user action')
+        timerRef.current = setTimeout(tick, POLL_INTERVAL)
+        return
+      }
+
+      // If conflict was resolved (or cloud changed), reset the flag
+      if (status !== 'newer' && conflictRef.current) {
+        conflictRef.current = false
+      }
+
+      // Only auto-push when local is dirty or cloud is older/missing.
+      // Never silently pull — that requires explicit user approval.
+      if (status === 'older' || status === 'same' || isDirty()) {
+        try {
+          const result = await performSync(settings.filePath)
+          if (result.action !== 'none') {
+            console.log('[AutoSync]', result.action, result.message)
+          }
+        } catch (err) {
+          console.error('[AutoSync] Error:', err)
         }
-      } catch (err) {
-        console.error('[AutoSync] Error:', err)
       }
 
       const interval = visibleRef.current

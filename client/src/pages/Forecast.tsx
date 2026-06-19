@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Account, ForecastTransaction, BalanceForecast, LowBalanceAnalysis, Category } from '../types'
-import { accountsApi, transactionsApi, categoriesApi, historyApi } from '../services/database'
+import { accountsApi, transactionsApi, categoriesApi, historyApi, preferencesApi } from '../services/database'
 import { createSafeDate, formatDateForDisplay, formatDateForInput, formatDateForStorage } from '../utils/dateUtils'
 import { generateBalanceForecast, generateForecastTransactions, generateLowBalanceAnalysis } from '../utils/forecastEngine'
 import CategorySelector from '../components/CategorySelector'
@@ -56,18 +56,58 @@ const Forecast: React.FC = () => {
     transferToAccountId: '',
   })
   
-  // Load saved start date from localStorage, or default to today's date
-  const getSavedStartDate = () => {
+  // Load saved start date from database preferences (with localStorage fallback for migration)
+  const getSavedStartDate = async () => {
+    try {
+      const prefs = await preferencesApi.getAll()
+      if (prefs['forecast_start_date']) {
+        return prefs['forecast_start_date']
+      }
+    } catch (e) {
+      console.error('Failed to read forecast_start_date from preferences:', e)
+    }
+    // Fallback: localStorage for migration, or default to today
     const saved = localStorage.getItem('forecastStartDate')
     if (saved) {
+      // Migrate to database
+      await preferencesApi.set('forecast_start_date', saved).catch(() => {})
       return saved
     }
-    return formatDateForStorage(new Date())
+    const today = formatDateForStorage(new Date())
+    await preferencesApi.set('forecast_start_date', today).catch(() => {})
+    return today
   }
-  
-  const [startDate, setStartDate] = useState(getSavedStartDate())
-  
-  // Save start date to localStorage whenever it changes.
+
+  const [startDate, setStartDate] = useState(formatDateForStorage(new Date()))
+
+  // On mount: read start date from database (async init)
+  useEffect(() => {
+    getSavedStartDate().then(date => {
+      setStartDate(date)
+      localStorage.setItem('forecastStartDate', date)
+    })
+  }, [])
+
+  // Listen for sync pulls so we pick up remote start date changes
+  useEffect(() => {
+    const handlePulled = async () => {
+      console.log('[Forecast] sync:pulled received — refreshing start date')
+      try {
+        const prefs = await preferencesApi.getAll()
+        if (prefs['forecast_start_date']) {
+          const newDate = prefs['forecast_start_date']
+          setStartDate(newDate)
+          localStorage.setItem('forecastStartDate', newDate)
+        }
+      } catch (e) {
+        console.error('[Forecast] Failed to refresh start date after sync:', e)
+      }
+    }
+    window.addEventListener('sync:pulled', handlePulled)
+    return () => window.removeEventListener('sync:pulled', handlePulled)
+  }, [])
+
+  // Save start date to database and localStorage whenever it changes.
   // When the date moves forward, auto-accept forecast occurrences that now
   // fall before the new start date.  When it moves backward, auto-return
   // history entries that now fall on or after the new start date.
@@ -138,6 +178,9 @@ const Forecast: React.FC = () => {
 
     setStartDate(newDate)
     localStorage.setItem('forecastStartDate', newDate)
+    preferencesApi.set('forecast_start_date', newDate).catch((e: any) => {
+      console.error('[Forecast] Failed to save start date to preferences:', e)
+    })
     setSelectedTransactions([])
   }
   const [forecastMonths, setForecastMonths] = useState(60)

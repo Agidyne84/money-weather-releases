@@ -9,7 +9,7 @@ import FirstTimeLockSetup from './FirstTimeLockSetup'
 import MobileUpdatePrompt from './MobileUpdatePrompt'
 import AppVersion from './AppVersion'
 import { isLockEnabled, isLockSetupComplete } from '../services/lockService'
-import { getCloudSyncSettings, checkCloudSyncStatus, performSync } from '../services/syncEngine'
+import { getCloudSyncSettings, checkCloudSyncStatus, pullCloudBackup, pushCloudBackup, refreshLocalPreferences } from '../services/syncEngine'
 import { isDirty } from '../services/dirtyTracker'
 import { getSessionPassphrase } from '../services/securePassphrase'
 import { useAutoSync } from '../hooks/useAutoSync'
@@ -70,6 +70,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [locked, setLocked] = useState(false)
   const [lockReady, setLockReady] = useState(false)
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null)
+  const [syncConflict, setSyncConflict] = useState<{ open: boolean; filePath: string | null }>({ open: false, filePath: null })
 
   useEffect(() => {
     let backgroundedAt: number | null = null
@@ -99,18 +100,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         if (syncSettings.enabled && syncSettings.filePath) {
           const status = await checkCloudSyncStatus(syncSettings.filePath)
           if (status === 'newer') {
-            const wantsSync = window.confirm(
-              'A newer cloud backup was found. Would you like to sync now?'
-            )
-            if (wantsSync) {
-              const passphrase = getSessionPassphrase()
-              if (passphrase) {
-                await performSync(syncSettings.filePath)
-                window.alert('Cloud sync completed successfully.')
-              } else {
-                window.alert('Please enter your PIN to unlock the cloud sync password in Setup > Cloud Sync.')
-              }
-            }
+            setSyncConflict({ open: true, filePath: syncSettings.filePath })
           }
         }
       } catch (e) {
@@ -118,6 +108,21 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       }
     }
     init()
+
+    // Listen for runtime sync conflict events from useAutoSync
+    const handleConflict = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.filePath) {
+        setSyncConflict({ open: true, filePath: detail.filePath })
+      }
+    }
+    window.addEventListener('sync:conflict', handleConflict)
+
+    // Listen for successful pulls so pages can re-read preferences
+    const handlePulled = () => {
+      console.log('[Layout] sync:pulled event received')
+    }
+    window.addEventListener('sync:pulled', handlePulled)
 
     // Prompt to save on close if dirty
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -154,8 +159,46 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('sync:conflict', handleConflict)
+      window.removeEventListener('sync:pulled', handlePulled)
     }
   }, [])
+
+  const handleSyncAccept = async () => {
+    if (!syncConflict.filePath) return
+    try {
+      const passphrase = getSessionPassphrase()
+      if (!passphrase) {
+        window.alert('Please enter your PIN to unlock the cloud sync password in Setup > Cloud Sync.')
+        setSyncConflict({ open: false, filePath: null })
+        return
+      }
+      const result = await pullCloudBackup(syncConflict.filePath)
+      await refreshLocalPreferences()
+      window.dispatchEvent(new CustomEvent('sync:pulled', { detail: result }))
+      setSyncConflict({ open: false, filePath: null })
+    } catch (e: any) {
+      console.error('[Layout] Sync accept failed:', e)
+      window.alert(`Failed to pull from cloud: ${e.message || 'Unknown error'}`)
+    }
+  }
+
+  const handleSyncReject = async () => {
+    if (!syncConflict.filePath) return
+    try {
+      const passphrase = getSessionPassphrase()
+      if (!passphrase) {
+        window.alert('Please enter your PIN to unlock the cloud sync password in Setup > Cloud Sync.')
+        setSyncConflict({ open: false, filePath: null })
+        return
+      }
+      await pushCloudBackup(syncConflict.filePath)
+      setSyncConflict({ open: false, filePath: null })
+    } catch (e: any) {
+      console.error('[Layout] Sync reject (push) failed:', e)
+      window.alert(`Failed to push to cloud: ${e.message || 'Unknown error'}`)
+    }
+  }
 
   const handleUnlock = () => setLocked(false)
 
@@ -175,6 +218,34 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
       {!locked && <UpdateStatus />}
       {isNativePlatform() && !locked && <MobileUpdatePrompt />}
+
+      {/* Sync Conflict Dialog */}
+      {syncConflict.open && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Cloud Backup Changed</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              The cloud backup file has been updated by another device.
+              Would you like to accept the remote changes or keep your local data?
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={handleSyncReject}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+              >
+                Keep Local
+              </button>
+              <button
+                onClick={handleSyncAccept}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+              >
+                Accept Remote
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
