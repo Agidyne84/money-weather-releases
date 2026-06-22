@@ -1,6 +1,6 @@
 {
   "name": "budget-app-electron",
-  "version": "1.1.55",
+  "version": "1.1.56",
   "description": "Money Weather - Budget App Electron Wrapper",
   "author": "Monroe Engineering",
   "main": "main.js",
@@ -35,6 +35,10 @@
       {
         "from": "server",
         "to": "server"
+      },
+      {
+        "from": "assets/database",
+        "to": "assets/database"
       }
     ],
     "win": {

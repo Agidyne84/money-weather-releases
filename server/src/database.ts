@@ -35,7 +35,7 @@ function resolveServerAsset(relative: string): string {
     return fallback1
   }
 
-  // Fallback 2: Electron assets directory (reliable in production NSIS installs)
+  // Fallback 2: Electron assets directory (unpacked or outside asar)
   const resourcesPath = (process as any).resourcesPath as string | undefined
   if (resourcesPath) {
     const fallback2 = path.join(resourcesPath, 'assets', relative)
@@ -43,6 +43,22 @@ function resolveServerAsset(relative: string): string {
       console.log(`[DB] Resolved asset "${relative}" -> ${fallback2} (assets fallback)`)
       return fallback2
     }
+  }
+
+  // Fallback 3: assets bundled inside app.asar (Electron packs files[] into asar)
+  if (resourcesPath) {
+    const fallback3 = path.join(resourcesPath, 'app.asar', 'assets', relative)
+    if (existsSync(fallback3)) {
+      console.log(`[DB] Resolved asset "${relative}" -> ${fallback3} (asar assets fallback)`)
+      return fallback3
+    }
+  }
+
+  // Fallback 4: deeper server tree walk (some builds nest extraResources deeper)
+  const fallback4 = path.resolve(__dirname, '..', '..', '..', '..', relative)
+  if (existsSync(fallback4)) {
+    console.log(`[DB] Resolved asset "${relative}" -> ${fallback4} (deep fallback)`)
+    return fallback4
   }
 
   // Last resort: return fallback1 so the error message points to the expected location

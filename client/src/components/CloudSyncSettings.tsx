@@ -177,9 +177,13 @@ const CloudSyncSettings: React.FC = () => {
     // Mobile: use CloudFilePlugin (SAF) to pick a persistent content:// URI
     try {
       const pick = await CloudFile.pickFile({ mimeType: '*/*' })
-      if (!pick.name.endsWith('.budgetbackup')) {
-        setMessage({ type: 'error', text: 'Please select a .budgetbackup file.' })
-        return
+      const fileName = (pick.name || pick.uri || '').toString()
+      const hasBackupExt = fileName.toLowerCase().endsWith('.budgetbackup')
+      if (!hasBackupExt) {
+        // Allow non-.budgetbackup files with a warning — the user may have renamed it
+        if (!confirm(`The selected file does not have a .budgetbackup extension (${fileName}). Continue anyway?`)) {
+          return
+        }
       }
       // Read file content for password verification
       const readResult = await CloudFile.readFile({ uri: pick.uri })
