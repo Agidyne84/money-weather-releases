@@ -1,7 +1,7 @@
 {
     "version": "1.1.56",
     "versionCode": 10156,
-    "downloadUrl": "PLACEHOLDER",
+    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.56/app-release.apk",
     "force":  false,
     "releaseNotes": "Desktop: Added extraResources for assets/database and more fallback paths in database.ts to reliably locate schema.sql in NSIS installs. Mobile: Fixed file picker to allow files without .budgetbackup extension (with confirmation), and made extension check case-insensitive."
 }
