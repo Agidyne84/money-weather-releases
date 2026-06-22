@@ -1,7 +1,7 @@
 {
     "version": "1.1.55",
     "versionCode": 10155,
-    "downloadUrl": "PLACEHOLDER",
+    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.55/app-release.apk",
     "force":  false,
     "releaseNotes": "Desktop: Fixed startup error caused by missing schema.sql in NSIS installs. Mobile: Removed legacy-path banner. Added Reset Cloud Sync button to clear file path, password, and sync history so users can start fresh."
 }
