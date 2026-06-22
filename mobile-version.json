@@ -1,7 +1,7 @@
 {
     "version": "1.1.53",
     "versionCode": 10153,
-    "downloadUrl": "PLACEHOLDER",
+    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.53/app-release.apk",
     "force":  false,
     "releaseNotes": "Mobile: Cloud sync now uses Android Storage Access Framework (SAF) with persistent content:// URIs, enabling direct read/write to the same cloud file (OneDrive, Google Drive, etc.) that the desktop app uses. No more stale local copies. Desktop: Rebuilt with copy-deps.ps1 to ensure server schema.sql and latest client assets are included."
 }
