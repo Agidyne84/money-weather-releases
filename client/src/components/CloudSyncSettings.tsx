@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import {
@@ -21,6 +21,7 @@ import {
   unlockPassphrase,
 } from '../services/securePassphrase'
 import { verifyBackupPassword } from '../utils/mobileBackup'
+import CloudFile from '../plugins/CloudFilePlugin'
 import AppLock from './AppLock'
 
 const isNative = Capacitor.isNativePlatform()
@@ -51,7 +52,6 @@ const CloudSyncSettings: React.FC = () => {
   const [syncMode, setSyncMode] = useState<SyncMode>('pull')
   const [cloudFileInfo, setCloudFileInfo] = useState<{ modifiedAt: string | null; size: number | null }>({ modifiedAt: null, size: null })
   const [fileMissing, setFileMissing] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const [fileStatus, setFileStatus] = useState<string>('')
 
   // For verifying an existing file
@@ -172,8 +172,34 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Mobile: trigger native file picker via hidden input
-    fileInputRef.current?.click()
+    // Mobile: use CloudFilePlugin (SAF) to pick a persistent content:// URI
+    try {
+      const pick = await CloudFile.pickFile({ mimeType: '*/*' })
+      if (!pick.name.endsWith('.budgetbackup')) {
+        setMessage({ type: 'error', text: 'Please select a .budgetbackup file.' })
+        return
+      }
+      // Read file content for password verification
+      const readResult = await CloudFile.readFile({ uri: pick.uri })
+      const base64 = readResult.data
+      const binaryString = atob(base64)
+      const bytes = new Uint8Array(binaryString.length)
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+      }
+      setPendingFileBuffer(bytes.buffer)
+      setPendingFileName(pick.uri) // store the persistent content:// URI as the path
+      setPassword('')
+      setConfirmPassword('')
+      setVerifyError(false)
+      setPasswordModalContext('verify-existing')
+      setShowPasswordModal(true)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg !== 'User cancelled') {
+        setMessage({ type: 'error', text: msg })
+      }
+    }
   }
 
   /* ─── Create New File ─── */
@@ -214,30 +240,6 @@ const CloudSyncSettings: React.FC = () => {
 
     // Mobile: open folder browser to select save location within Documents
     await openFolderBrowser()
-  }
-
-  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    e.target.value = ''
-
-    if (!file.name.endsWith('.budgetbackup')) {
-      setMessage({ type: 'error', text: 'Please select a .budgetbackup file.' })
-      return
-    }
-
-    try {
-      const buffer = await file.arrayBuffer()
-      setPendingFileBuffer(buffer)
-      setPendingFileName(file.name)
-      setPassword('')
-      setConfirmPassword('')
-      setVerifyError(false)
-      setPasswordModalContext('verify-existing')
-      setShowPasswordModal(true)
-    } catch {
-      setMessage({ type: 'error', text: 'Could not read the selected file.' })
-    }
   }
 
   const handleVerifyFilePassword = async () => {
@@ -396,18 +398,25 @@ const CloudSyncSettings: React.FC = () => {
       setConfirmPassword('')
       setMessage({ type: 'success', text: 'Password saved securely.' })
 
-      // Verifying existing file: copy it to Documents and set path
+      // Verifying existing file: save the path (content:// URI or Documents path)
       if (appLockAction === 'verify-file' && pendingFileName && pendingFileBuffer) {
-        await ensureParentDirs(pendingFileName)
-        const base64 = arrayBufferToBase64(pendingFileBuffer)
-        await Filesystem.writeFile({
-          path: pendingFileName,
-          directory: Directory.Documents,
-          data: base64,
-          encoding: 'base64' as any,
-        })
-        await setCloudSyncPath(pendingFileName)
-        setSettings(prev => ({ ...prev, filePath: pendingFileName }))
+        if (pendingFileName.startsWith('content://')) {
+          // SAF persistent URI: no local copy needed
+          await setCloudSyncPath(pendingFileName)
+          setSettings(prev => ({ ...prev, filePath: pendingFileName }))
+        } else {
+          // Legacy Documents path: write local copy
+          await ensureParentDirs(pendingFileName)
+          const base64 = arrayBufferToBase64(pendingFileBuffer)
+          await Filesystem.writeFile({
+            path: pendingFileName,
+            directory: Directory.Documents,
+            data: base64,
+            encoding: 'base64' as any,
+          })
+          await setCloudSyncPath(pendingFileName)
+          setSettings(prev => ({ ...prev, filePath: pendingFileName }))
+        }
         setPendingFileBuffer(null)
         setPendingFileName(null)
         loadSettings()
@@ -768,17 +777,6 @@ const CloudSyncSettings: React.FC = () => {
             </div>
           )}
         </>
-      )}
-
-      {/* Hidden native file input for mobile (accept ALL files so .budgetbackup shows) */}
-      {isNative && (
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="*/*"
-          className="hidden"
-          onChange={handleFileSelected}
-        />
       )}
 
       {/* Password Modal — context-aware */}

@@ -1,0 +1,56 @@
+import { registerPlugin } from '@capacitor/core'
+
+export interface CloudFilePickResult {
+  uri: string
+  name: string
+}
+
+export interface CloudFileInfoResult {
+  exists: boolean
+  name: string | null
+  size: number
+  modifiedAt: string | null
+}
+
+export interface CloudFileReadResult {
+  data: string // base64
+}
+
+export interface CloudFileWriteOptions {
+  uri: string
+  data: string // base64
+}
+
+export interface CloudFileWriteResult {
+  success: boolean
+  bytesWritten: number
+}
+
+export interface CloudFilePlugin {
+  pickFile(options?: { mimeType?: string }): Promise<CloudFilePickResult>
+  getFileInfo(options: { uri: string }): Promise<CloudFileInfoResult>
+  readFile(options: { uri: string }): Promise<CloudFileReadResult>
+  writeFile(options: CloudFileWriteOptions): Promise<CloudFileWriteResult>
+}
+
+const CloudFile = registerPlugin<CloudFilePlugin>('CloudFile', {
+  web: async () => {
+    // Web fallback: not supported
+    return {
+      pickFile: async () => {
+        throw new Error('CloudFile.pickFile is not supported on web')
+      },
+      getFileInfo: async () => {
+        throw new Error('CloudFile.getFileInfo is not supported on web')
+      },
+      readFile: async () => {
+        throw new Error('CloudFile.readFile is not supported on web')
+      },
+      writeFile: async () => {
+        throw new Error('CloudFile.writeFile is not supported on web')
+      },
+    }
+  },
+})
+
+export default CloudFile

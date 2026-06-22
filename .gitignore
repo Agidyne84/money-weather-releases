@@ -60,3 +60,7 @@ server/database/*.js
 
 # Archived plan files
 .windsurf/plans/archive/
+
+
+
+!client/android/app/src/main/java/**/*.java

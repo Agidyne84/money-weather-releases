@@ -16,6 +16,7 @@ import {
 } from './securePassphrase'
 import { isDirty, clearDirty } from './dirtyTracker'
 import { preferencesApi } from './database'
+import CloudFile from '../plugins/CloudFilePlugin'
 
 const API_BASE_URL = 'http://localhost:3001/api'
 const isNative = Capacitor.isNativePlatform()
@@ -90,9 +91,27 @@ async function desktopPush(filePath: string, passphrase?: string): Promise<{ suc
   return response.data
 }
 
+function isContentUri(path: string): boolean {
+  return path.startsWith('content://')
+}
+
 /* ─── Mobile helpers ─── */
 
 async function mobileFileInfo(filePath: string): Promise<CloudFileInfo> {
+  if (isContentUri(filePath)) {
+    try {
+      const info = await CloudFile.getFileInfo({ uri: filePath })
+      return {
+        exists: info.exists,
+        modifiedAt: info.modifiedAt,
+        size: info.size >= 0 ? info.size : undefined,
+      }
+    } catch {
+      return { exists: false, modifiedAt: null }
+    }
+  }
+
+  // Legacy path: Filesystem API
   try {
     const stat = await Filesystem.stat({
       path: filePath,
@@ -109,13 +128,20 @@ async function mobileFileInfo(filePath: string): Promise<CloudFileInfo> {
 }
 
 async function mobilePull(filePath: string, passphrase?: string): Promise<{ success: boolean; summary: Record<string, number> }> {
-  const result = await Filesystem.readFile({
-    path: filePath,
-    directory: Directory.Documents,
-    encoding: 'base64' as Encoding,
-  })
-  // result.data is base64 when reading with Encoding.Base64
-  const base64 = result.data as string
+  let base64: string
+
+  if (isContentUri(filePath)) {
+    const result = await CloudFile.readFile({ uri: filePath })
+    base64 = result.data
+  } else {
+    const result = await Filesystem.readFile({
+      path: filePath,
+      directory: Directory.Documents,
+      encoding: 'base64' as Encoding,
+    })
+    base64 = result.data as string
+  }
+
   const binaryString = atob(base64)
   const bytes = new Uint8Array(binaryString.length)
   for (let i = 0; i < binaryString.length; i++) {
@@ -135,6 +161,17 @@ function uint8ToBase64(bytes: Uint8Array): string {
 async function mobilePush(filePath: string, passphrase?: string): Promise<{ success: boolean; modifiedAt: string; size: number }> {
   const data = await exportMobileBackup(passphrase)
   const base64 = uint8ToBase64(data)
+
+  if (isContentUri(filePath)) {
+    await CloudFile.writeFile({ uri: filePath, data: base64 })
+    return {
+      success: true,
+      modifiedAt: new Date().toISOString(),
+      size: data.length,
+    }
+  }
+
+  // Legacy path
   await Filesystem.writeFile({
     path: filePath,
     directory: Directory.Documents,
@@ -195,7 +232,13 @@ export async function checkCloudSyncStatus(filePath: string): Promise<'newer' | 
     const lastSync = settings.lastSyncTimestamp
     if (!lastSync) return 'newer'
 
-    const cloudTime = new Date(info.modifiedAt || 0).getTime()
+    // Content URIs (SAF) do not expose reliable modification time.
+    // Fall back to dirty-state heuristic: if local is dirty, push; otherwise pull.
+    if (!info.modifiedAt) {
+      return isDirty() ? 'older' : 'newer'
+    }
+
+    const cloudTime = new Date(info.modifiedAt).getTime()
     const localTime = new Date(lastSync).getTime()
 
     if (cloudTime > localTime + 2000) return 'newer'   // 2s tolerance
