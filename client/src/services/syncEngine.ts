@@ -74,6 +74,13 @@ export async function setLastSyncTimestamp(timestamp: string): Promise<void> {
   await Preferences.set({ key: CLOUD_SYNC_LAST_SYNC_KEY, value: timestamp })
 }
 
+export async function clearCloudSyncSettings(): Promise<void> {
+  await Preferences.remove({ key: CLOUD_SYNC_ENABLED_KEY })
+  await Preferences.remove({ key: CLOUD_SYNC_PATH_KEY })
+  await Preferences.remove({ key: CLOUD_SYNC_LAST_SYNC_KEY })
+  await Preferences.remove({ key: CLOUD_SYNC_MODE_KEY })
+}
+
 /* ─── Desktop helpers ─── */
 
 async function desktopFileInfo(filePath: string): Promise<CloudFileInfo> {

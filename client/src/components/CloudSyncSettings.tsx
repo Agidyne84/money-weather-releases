@@ -6,6 +6,7 @@ import {
   setCloudSyncEnabled,
   setCloudSyncPath,
   setCloudSyncMode,
+  clearCloudSyncSettings,
   checkCloudSyncStatus,
   getCloudFileInfo,
   pullCloudBackup,
@@ -19,6 +20,7 @@ import {
   storePassphrase,
   getSessionPassphrase,
   unlockPassphrase,
+  deleteStoredPassphrase,
 } from '../services/securePassphrase'
 import { verifyBackupPassword } from '../utils/mobileBackup'
 import CloudFile from '../plugins/CloudFilePlugin'
@@ -580,6 +582,24 @@ const CloudSyncSettings: React.FC = () => {
     }
   }
 
+  const handleResetCloudSync = async () => {
+    if (!confirm('Reset all cloud sync settings? This will clear the file path, password, and sync history. Your local data will not be affected.')) {
+      return
+    }
+    setLoading(true)
+    try {
+      await clearCloudSyncSettings()
+      await deleteStoredPassphrase()
+      setSettings({ enabled: false, filePath: null, lastSyncTimestamp: null, syncMode: 'manual' })
+      setHasPassword(false)
+      setMessage({ type: 'success', text: 'Cloud sync settings reset. You can re-configure sync at any time.' })
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const canSync = settings.enabled && !!settings.filePath && hasPassword
 
   const getPasswordModalTitle = () => {
@@ -667,15 +687,6 @@ const CloudSyncSettings: React.FC = () => {
                 Create New File
               </button>
             </div>
-
-            {isNative && settings.filePath && !settings.filePath.startsWith('content://') && (
-              <div className="bg-amber-50 border border-amber-200 rounded-md p-3 space-y-2">
-                <p className="text-sm font-semibold text-amber-800">Outdated Sync Setup</p>
-                <p className="text-xs text-amber-700">
-                  This app is using a local copy of your backup file. Cloud sync requires a direct connection to your cloud file. Please tap <strong>Select Existing File</strong> and choose your <strong>.budgetbackup</strong> file from OneDrive again.
-                </p>
-              </div>
-            )}
 
             {!fileMissing && settings.filePath && fileStatus && (
               <p className="text-xs text-gray-500">Status: {fileStatus}</p>
@@ -785,6 +796,17 @@ const CloudSyncSettings: React.FC = () => {
               </p>
             </div>
           )}
+
+          {/* Reset */}
+          <div className="flex justify-end">
+            <button
+              onClick={handleResetCloudSync}
+              disabled={loading}
+              className="text-xs text-red-600 hover:text-red-800 underline disabled:opacity-50"
+            >
+              Reset Cloud Sync
+            </button>
+          </div>
         </>
       )}
 
