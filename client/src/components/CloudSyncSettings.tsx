@@ -668,6 +668,15 @@ const CloudSyncSettings: React.FC = () => {
               </button>
             </div>
 
+            {isNative && settings.filePath && !settings.filePath.startsWith('content://') && (
+              <div className="bg-amber-50 border border-amber-200 rounded-md p-3 space-y-2">
+                <p className="text-sm font-semibold text-amber-800">Outdated Sync Setup</p>
+                <p className="text-xs text-amber-700">
+                  This app is using a local copy of your backup file. Cloud sync requires a direct connection to your cloud file. Please tap <strong>Select Existing File</strong> and choose your <strong>.budgetbackup</strong> file from OneDrive again.
+                </p>
+              </div>
+            )}
+
             {!fileMissing && settings.filePath && fileStatus && (
               <p className="text-xs text-gray-500">Status: {fileStatus}</p>
             )}

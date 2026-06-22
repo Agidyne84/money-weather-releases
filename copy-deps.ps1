@@ -13,6 +13,10 @@ Copy-Item -Force          "$root\server\package.json" "$electron\server\package.
 New-Item -ItemType Directory -Force "$electron\server\database" | Out-Null
 Copy-Item -Force "$root\server\database\schema.sql"   "$electron\server\database\schema.sql"
 
+# Also copy schema.sql to assets for reliable access in production Electron builds
+New-Item -ItemType Directory -Force "$electron\assets\database" | Out-Null
+Copy-Item -Force "$root\server\database\schema.sql"   "$electron\assets\database\schema.sql"
+
 # Copy client files
 Copy-Item -Recurse -Force "$root\client\dist" "$electron\client\dist"
 

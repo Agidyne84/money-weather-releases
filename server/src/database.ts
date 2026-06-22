@@ -16,8 +16,10 @@ function resolveServerAsset(relative: string): string {
         const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
         if (pkg.name === 'budget-app-server') {
           const resolved = path.join(dir, relative)
-          console.log(`[DB] Resolved asset "${relative}" -> ${resolved} (found server package.json in ${dir})`)
-          return resolved
+          if (existsSync(resolved)) {
+            console.log(`[DB] Resolved asset "${relative}" -> ${resolved} (found server package.json in ${dir})`)
+            return resolved
+          }
         }
       } catch {
         // not our package.json
@@ -25,11 +27,27 @@ function resolveServerAsset(relative: string): string {
     }
     dir = path.dirname(dir)
   }
-  // Fallback should never happen, but preserves old behavior with clear warning
-  const fallback = path.resolve(__dirname, '..', '..', '..')
-  const resolved = path.join(fallback, relative)
-  console.warn(`[DB] WARNING: Could not find server package.json. Fallback for "${relative}" -> ${resolved}`)
-  return resolved
+
+  // Fallback 1: canonical server tree even when package.json is missing
+  const fallback1 = path.resolve(__dirname, '..', '..', '..', relative)
+  if (existsSync(fallback1)) {
+    console.log(`[DB] Resolved asset "${relative}" -> ${fallback1} (fallback path)`)
+    return fallback1
+  }
+
+  // Fallback 2: Electron assets directory (reliable in production NSIS installs)
+  const resourcesPath = (process as any).resourcesPath as string | undefined
+  if (resourcesPath) {
+    const fallback2 = path.join(resourcesPath, 'assets', relative)
+    if (existsSync(fallback2)) {
+      console.log(`[DB] Resolved asset "${relative}" -> ${fallback2} (assets fallback)`)
+      return fallback2
+    }
+  }
+
+  // Last resort: return fallback1 so the error message points to the expected location
+  console.warn(`[DB] WARNING: Could not find "${relative}". Expected at: ${fallback1}`)
+  return fallback1
 }
 
 export class Database {
