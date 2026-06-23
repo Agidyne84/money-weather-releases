@@ -2,9 +2,27 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+let PDFDocument;
+try {
+  ({ PDFDocument } = require('pdf-lib'));
+} catch (e) {
+  console.error('pdf-lib is not installed. Run: npm install --prefix "C:\\Users\\Raymond\\CascadeProjects\\BudgetApp"');
+  process.exit(1);
+}
+
 const sourceDir = '\\\\fs1\\Services\\SEP\\Artifacts\\Docs\\process-flows\\processes';
-const outputDir = '\\\\fs1\\Services\\SEP\\Artifacts\\Docs\\process-flows\\training';
-const plantumlJar = 'C:\\\\Users\\\\Raymond\\\\CascadeProjects\\\\BudgetApp\\\\plantuml.jar';
+const networkOutputDir = '\\\\fs1\\Services\\SEP\\Artifacts\\Docs\\process-flows\\training';
+const localOutputDir = path.join('C:', 'Users', 'Raymond', 'CascadeProjects', 'BudgetApp', 'training-output');
+const plantumlJar = 'C:\\Users\\Raymond\\CascadeProjects\\BudgetApp\\plantuml.jar';
+
+let outputDir = localOutputDir;
+try {
+  fs.mkdirSync(networkOutputDir, { recursive: true });
+  outputDir = networkOutputDir;
+} catch (e) {
+  console.warn(`Network output path not writable, falling back to ${localOutputDir}`);
+}
+
 const pumlDir = path.join(outputDir, 'puml');
 const pngDir = path.join(outputDir, 'png');
 const pdfDir = path.join(outputDir, 'pdf');
@@ -23,17 +41,37 @@ function plantumlCmd(fmt, outDir, inputPath) {
   return `java -jar "${plantumlJar}" -t${fmt} -o "${outDir}" "${inputPath}"`;
 }
 
-function render(fmt, outDir, inputPath) {
-  const outFile = path.join(outDir, `${path.basename(inputPath, '.puml')}.${fmt}`);
-  // remove any stale 0-byte output so success/failure is obvious
+function renderPng(outDir, inputPath) {
+  const outFile = path.join(outDir, `${path.basename(inputPath, '.puml')}.png`);
   try { fs.unlinkSync(outFile); } catch (e) { /* ignore */ }
-  const cmd = plantumlCmd(fmt, outDir, inputPath);
+  const cmd = plantumlCmd('png', outDir, inputPath);
   try {
     execSync(cmd, { stdio: 'pipe' });
+    return outFile;
+  } catch (e) {
+    console.error(`Failed to render ${inputPath} to png: ${e.message}`);
+    if (e.stderr) console.error(e.stderr.toString());
+    return null;
+  }
+}
+
+async function pngToPdf(pngPath, pdfPath) {
+  try {
+    const pdfDoc = await PDFDocument.create();
+    const pngBytes = fs.readFileSync(pngPath);
+    const pngImage = await pdfDoc.embedPng(pngBytes);
+    const page = pdfDoc.addPage([pngImage.width, pngImage.height]);
+    page.drawImage(pngImage, {
+      x: 0,
+      y: 0,
+      width: pngImage.width,
+      height: pngImage.height,
+    });
+    const pdfBytes = await pdfDoc.save();
+    fs.writeFileSync(pdfPath, pdfBytes);
     return true;
   } catch (e) {
-    console.error(`Failed to render ${inputPath} to ${fmt}: ${e.message}`);
-    if (e.stderr) console.error(e.stderr.toString());
+    console.error(`Failed to convert ${pngPath} to pdf: ${e.message}`);
     return false;
   }
 }
@@ -71,32 +109,44 @@ function removeErrorPaths(text) {
   return result.join('\n');
 }
 
-const mdFiles = fs.readdirSync(sourceDir)
-  .filter(f => f.endsWith('.md') && !f.toLowerCase().startsWith('process-template'))
-  .sort();
+async function main() {
+  const mdFiles = fs.readdirSync(sourceDir)
+    .filter(f => f.endsWith('.md') && !f.toLowerCase().startsWith('process-template'))
+    .sort();
 
-for (const mdFile of mdFiles) {
-  const content = fs.readFileSync(path.join(sourceDir, mdFile), 'utf8');
-  const matches = [...content.matchAll(/```plantuml\s*\n(.*?)\n```/gs)];
-  const baseName = path.basename(mdFile, '.md');
+  for (const mdFile of mdFiles) {
+    const content = fs.readFileSync(path.join(sourceDir, mdFile), 'utf8');
+    const matches = [...content.matchAll(/```plantuml\s*\n(.*?)\n```/gs)];
+    const baseName = path.basename(mdFile, '.md');
 
-  for (let i = 0; i < matches.length; i++) {
-    const suffix = matches.length > 1 ? `_${i + 1}` : '';
-    const pumlName = `${baseName}${suffix}.puml`;
-    const pumlPath = path.join(pumlDir, pumlName);
-    const simplePumlPath = path.join(simpleDir, pumlName);
+    for (let i = 0; i < matches.length; i++) {
+      const suffix = matches.length > 1 ? `_${i + 1}` : '';
+      const pumlName = `${baseName}${suffix}.puml`;
+      const pumlPath = path.join(pumlDir, pumlName);
+      const simplePumlPath = path.join(simpleDir, pumlName);
 
-    let diagram = matches[i][1].trim() + '\n';
-    fs.writeFileSync(pumlPath, diagram, 'utf8');
+      let diagram = matches[i][1].trim() + '\n';
+      fs.writeFileSync(pumlPath, diagram, 'utf8');
 
-    let simplified = removeErrorPaths(diagram);
-    simplified = simplified.replace(/\n\s*\n+/g, '\n');
-    fs.writeFileSync(simplePumlPath, simplified.trim() + '\n', 'utf8');
+      let simplified = removeErrorPaths(diagram);
+      simplified = simplified.replace(/\n\s*\n+/g, '\n');
+      fs.writeFileSync(simplePumlPath, simplified.trim() + '\n', 'utf8');
 
-    render('png', pngDir, pumlPath);
-    render('pdf', pdfDir, pumlPath);
-    render('png', simpleDir, simplePumlPath);
+      const fullPng = renderPng(pngDir, pumlPath);
+      if (fullPng) {
+        const pdfPath = path.join(pdfDir, `${baseName}${suffix}.pdf`);
+        try { fs.unlinkSync(pdfPath); } catch (e) { /* ignore */ }
+        await pngToPdf(fullPng, pdfPath);
+      }
+
+      renderPng(simpleDir, simplePumlPath);
+    }
   }
+
+  console.log('Diagram extraction and rendering complete.');
 }
 
-console.log('Diagram extraction and rendering complete.');
+main().catch(e => {
+  console.error(e);
+  process.exit(1);
+});
