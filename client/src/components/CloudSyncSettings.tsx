@@ -104,6 +104,11 @@ const CloudSyncSettings: React.FC = () => {
     loadSettings()
   }, [loadSettings])
 
+  // Safety net: clear any stuck loading state on mount
+  useEffect(() => {
+    setLoading(false)
+  }, [])
+
   const handleToggle = async () => {
     const next = !settings.enabled
     await setCloudSyncEnabled(next)
@@ -187,13 +192,8 @@ const CloudSyncSettings: React.FC = () => {
       const hasBackupExt = fileName.toLowerCase().endsWith('.budgetbackup')
       setFileWarning(hasBackupExt ? null : `This file does not have a .budgetbackup extension (${fileName}). Make sure it is a valid backup.`)
 
-      // Read file content for password verification
-      const readResult = await CloudFile.readFile({ uri: pick.uri })
-      console.log('[CloudSync] readFile result length:', readResult.data?.length)
-      const buffer = base64ToArrayBuffer(readResult.data)
-      console.log('[CloudSync] decoded buffer size:', buffer.byteLength)
-
-      setPendingFileBuffer(buffer)
+      // Show the password modal immediately; we'll read & verify the file when the user clicks Verify
+      setPendingFileBuffer(null)
       setPendingFileName(pick.uri) // store the persistent content:// URI as the path
       setPassword('')
       setConfirmPassword('')
@@ -255,14 +255,39 @@ const CloudSyncSettings: React.FC = () => {
   }
 
   const handleVerifyFilePassword = async () => {
-    if (!pendingFileBuffer || !pendingFileName) return
+    if (!pendingFileName) return
     if (!password) return
     if (!setupPin) return
+    if (password !== confirmPassword) {
+      setMessage({ type: 'error', text: 'Passwords do not match.' })
+      return
+    }
 
     setLoading(true)
     setVerifyError(false)
     try {
-      const ok = await verifyBackupPassword(pendingFileBuffer, password)
+      // Read the file if we haven't already (mobile defers reading until verification)
+      let buffer: ArrayBuffer
+      if (pendingFileBuffer) {
+        buffer = pendingFileBuffer
+      } else if (isNative && pendingFileName.startsWith('content://')) {
+        const readResult = await CloudFile.readFile({ uri: pendingFileName })
+        buffer = base64ToArrayBuffer(readResult.data)
+      } else if (isNative) {
+        const result = await Filesystem.readFile({
+          path: pendingFileName,
+          directory: Directory.Documents,
+          encoding: 'base64' as any,
+        })
+        buffer = base64ToArrayBuffer(result.data as string)
+      } else {
+        const electronAPI = (window as any).electronAPI
+        const data = await electronAPI.readFile(pendingFileName)
+        const uint8 = data instanceof Uint8Array ? data : new Uint8Array(data)
+        buffer = uint8.buffer.slice(uint8.byteOffset, uint8.byteOffset + uint8.byteLength)
+      }
+
+      const ok = await verifyBackupPassword(buffer, password)
       if (ok) {
         // Store passphrase encrypted with the user's PIN
         await storePassphrase(setupPin, password)
@@ -273,7 +298,7 @@ const CloudSyncSettings: React.FC = () => {
           await setCloudSyncPath(pendingFileName)
         } else if (isNative) {
           await ensureParentDirs(pendingFileName)
-          const base64 = arrayBufferToBase64(pendingFileBuffer)
+          const base64 = arrayBufferToBase64(buffer)
           await Filesystem.writeFile({
             path: pendingFileName,
             directory: Directory.Documents,
@@ -300,6 +325,8 @@ const CloudSyncSettings: React.FC = () => {
         setVerifyError(true)
       }
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setMessage({ type: 'error', text: msg })
       setVerifyError(true)
       console.error('[CloudSync] verify failed:', err)
     } finally {
@@ -660,7 +687,7 @@ const CloudSyncSettings: React.FC = () => {
     }
   }
 
-  const showConfirmInModal = passwordModalContext !== 'verify-existing'
+  const showConfirmInModal = true
 
   return (
     <div className="space-y-6">
