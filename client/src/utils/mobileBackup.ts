@@ -5,6 +5,20 @@ import { Share } from '@capacitor/share'
 import { getDbConnection, initializeDatabase, closeDatabase } from '../services/database/mobileDb'
 import type { capSQLiteSet } from '@capacitor-community/sqlite'
 
+/**
+ * Decode a base64 string to an ArrayBuffer, handling whitespace/line-breaks
+ * that some encoders (e.g. Android Base64.DEFAULT) may insert.
+ */
+export function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const cleaned = base64.replace(/[\s\r\n]+/g, '')
+  const binaryString = atob(cleaned)
+  const bytes = new Uint8Array(binaryString.length)
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+  return bytes.buffer
+}
+
 // Binary file format constants (must match server/src/backup.ts exactly)
 const MAGIC = new Uint8Array([0x42, 0x41, 0x50, 0x4B]) // 'BAPK'
 const FORMAT_VERSION = 1

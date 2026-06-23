@@ -10,6 +10,7 @@ import axios from 'axios'
 import {
   exportMobileBackup,
   importMobileBackup,
+  base64ToArrayBuffer,
 } from '../utils/mobileBackup'
 import {
   getSessionPassphrase,
@@ -149,12 +150,8 @@ async function mobilePull(filePath: string, passphrase?: string): Promise<{ succ
     base64 = result.data as string
   }
 
-  const binaryString = atob(base64)
-  const bytes = new Uint8Array(binaryString.length)
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i)
-  }
-  return await importMobileBackup(bytes.buffer, passphrase)
+  const buffer = base64ToArrayBuffer(base64)
+  return await importMobileBackup(buffer, passphrase)
 }
 
 function uint8ToBase64(bytes: Uint8Array): string {

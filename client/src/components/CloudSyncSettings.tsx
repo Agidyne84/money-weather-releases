@@ -22,7 +22,7 @@ import {
   unlockPassphrase,
   deleteStoredPassphrase,
 } from '../services/securePassphrase'
-import { verifyBackupPassword } from '../utils/mobileBackup'
+import { verifyBackupPassword, base64ToArrayBuffer } from '../utils/mobileBackup'
 import CloudFile from '../plugins/CloudFilePlugin'
 import AppLock from './AppLock'
 
@@ -60,6 +60,8 @@ const CloudSyncSettings: React.FC = () => {
   const [pendingFileBuffer, setPendingFileBuffer] = useState<ArrayBuffer | null>(null)
   const [pendingFileName, setPendingFileName] = useState<string | null>(null)
   const [verifyError, setVerifyError] = useState(false)
+  const [fileWarning, setFileWarning] = useState<string | null>(null)
+  const [setupPin, setSetupPin] = useState('')
 
   // Mobile folder browser for Create New
   const [showFolderBrowser, setShowFolderBrowser] = useState(false)
@@ -162,6 +164,7 @@ const CloudSyncSettings: React.FC = () => {
           setPendingFileName(filePath)
           setPassword('')
           setConfirmPassword('')
+          setSetupPin('')
           setVerifyError(false)
           setPasswordModalContext('verify-existing')
           setShowPasswordModal(true)
@@ -175,36 +178,37 @@ const CloudSyncSettings: React.FC = () => {
     }
 
     // Mobile: use CloudFilePlugin (SAF) to pick a persistent content:// URI
+    setLoading(true)
+    setMessage(null)
     try {
       const pick = await CloudFile.pickFile({ mimeType: '*/*' })
+      console.log('[CloudSync] pickFile result:', pick.uri, pick.name)
       const fileName = (pick.name || pick.uri || '').toString()
       const hasBackupExt = fileName.toLowerCase().endsWith('.budgetbackup')
-      if (!hasBackupExt) {
-        // Allow non-.budgetbackup files with a warning — the user may have renamed it
-        if (!confirm(`The selected file does not have a .budgetbackup extension (${fileName}). Continue anyway?`)) {
-          return
-        }
-      }
+      setFileWarning(hasBackupExt ? null : `This file does not have a .budgetbackup extension (${fileName}). Make sure it is a valid backup.`)
+
       // Read file content for password verification
       const readResult = await CloudFile.readFile({ uri: pick.uri })
-      const base64 = readResult.data
-      const binaryString = atob(base64)
-      const bytes = new Uint8Array(binaryString.length)
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i)
-      }
-      setPendingFileBuffer(bytes.buffer)
+      console.log('[CloudSync] readFile result length:', readResult.data?.length)
+      const buffer = base64ToArrayBuffer(readResult.data)
+      console.log('[CloudSync] decoded buffer size:', buffer.byteLength)
+
+      setPendingFileBuffer(buffer)
       setPendingFileName(pick.uri) // store the persistent content:// URI as the path
       setPassword('')
       setConfirmPassword('')
+      setSetupPin('')
       setVerifyError(false)
       setPasswordModalContext('verify-existing')
       setShowPasswordModal(true)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       if (msg !== 'User cancelled') {
+        console.error('[CloudSync] Select existing failed:', err)
         setMessage({ type: 'error', text: msg })
       }
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -227,6 +231,7 @@ const CloudSyncSettings: React.FC = () => {
         setPasswordModalContext('create-new')
         setPassword('')
         setConfirmPassword('')
+        setSetupPin('')
         setVerifyError(false)
         setShowPasswordModal(true)
       } else {
@@ -237,6 +242,7 @@ const CloudSyncSettings: React.FC = () => {
           setPasswordModalContext('create-new')
           setPassword('')
           setConfirmPassword('')
+          setSetupPin('')
           setVerifyError(false)
           setShowPasswordModal(true)
         }
@@ -251,21 +257,51 @@ const CloudSyncSettings: React.FC = () => {
   const handleVerifyFilePassword = async () => {
     if (!pendingFileBuffer || !pendingFileName) return
     if (!password) return
+    if (!setupPin) return
 
     setLoading(true)
     setVerifyError(false)
     try {
       const ok = await verifyBackupPassword(pendingFileBuffer, password)
       if (ok) {
+        // Store passphrase encrypted with the user's PIN
+        await storePassphrase(setupPin, password)
+        setHasPassword(true)
+
+        // Save the file path
+        if (isNative && pendingFileName.startsWith('content://')) {
+          await setCloudSyncPath(pendingFileName)
+        } else if (isNative) {
+          await ensureParentDirs(pendingFileName)
+          const base64 = arrayBufferToBase64(pendingFileBuffer)
+          await Filesystem.writeFile({
+            path: pendingFileName,
+            directory: Directory.Documents,
+            data: base64,
+            encoding: 'base64' as any,
+          })
+          await setCloudSyncPath(pendingFileName)
+        } else {
+          await setCloudSyncPath(pendingFileName)
+        }
+        setSettings(prev => ({ ...prev, filePath: pendingFileName }))
+
+        // Clean up pending state
+        setPendingFileBuffer(null)
+        setPendingFileName(null)
+        setPassword('')
+        setConfirmPassword('')
+        setSetupPin('')
+        setFileWarning(null)
         setShowPasswordModal(false)
-        setAppLockAction('verify-file')
-        setPendingAction('verify-file')
-        setShowAppLock(true)
+        setMessage({ type: 'success', text: 'Backup file verified and saved.' })
+        loadSettings()
       } else {
         setVerifyError(true)
       }
-    } catch {
+    } catch (err) {
       setVerifyError(true)
+      console.error('[CloudSync] verify failed:', err)
     } finally {
       setLoading(false)
     }
@@ -280,10 +316,42 @@ const CloudSyncSettings: React.FC = () => {
       setMessage({ type: 'error', text: 'Passwords do not match.' })
       return
     }
-    setShowPasswordModal(false)
-    setAppLockAction('save-password')
-    setPendingAction('save-password')
-    setShowAppLock(true)
+    if (!setupPin) {
+      setMessage({ type: 'error', text: 'Please enter your app PIN.' })
+      return
+    }
+    if (!pendingFileName) return
+
+    setLoading(true)
+    try {
+      await storePassphrase(setupPin, password)
+      setHasPassword(true)
+
+      // Save the file path
+      if (isNative) {
+        await ensureParentDirs(pendingFileName)
+        await setCloudSyncPath(pendingFileName)
+      } else {
+        await setCloudSyncPath(pendingFileName)
+      }
+      setSettings(prev => ({ ...prev, filePath: pendingFileName }))
+
+      // Create initial backup
+      await createInitialBackup(pendingFileName)
+
+      // Clean up
+      setPassword('')
+      setConfirmPassword('')
+      setSetupPin('')
+      setShowPasswordModal(false)
+      setPendingFileName(null)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setMessage({ type: 'error', text: msg })
+      console.error('[CloudSync] save new password failed:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleAppLockUnlock = () => {
@@ -371,6 +439,7 @@ const CloudSyncSettings: React.FC = () => {
     setPasswordModalContext('create-new')
     setPassword('')
     setConfirmPassword('')
+    setSetupPin('')
     setVerifyError(false)
     setShowPasswordModal(true)
   }
@@ -397,50 +466,10 @@ const CloudSyncSettings: React.FC = () => {
         }
         return
       }
-
-      await storePassphrase(pin, password)
-      setHasPassword(true)
-      setPassword('')
-      setConfirmPassword('')
-      setMessage({ type: 'success', text: 'Password saved securely.' })
-
-      // Verifying existing file: save the path (content:// URI or Documents path)
-      if (appLockAction === 'verify-file' && pendingFileName && pendingFileBuffer) {
-        if (pendingFileName.startsWith('content://')) {
-          // SAF persistent URI: no local copy needed
-          await setCloudSyncPath(pendingFileName)
-          setSettings(prev => ({ ...prev, filePath: pendingFileName }))
-        } else {
-          // Legacy Documents path: write local copy
-          await ensureParentDirs(pendingFileName)
-          const base64 = arrayBufferToBase64(pendingFileBuffer)
-          await Filesystem.writeFile({
-            path: pendingFileName,
-            directory: Directory.Documents,
-            data: base64,
-            encoding: 'base64' as any,
-          })
-          await setCloudSyncPath(pendingFileName)
-          setSettings(prev => ({ ...prev, filePath: pendingFileName }))
-        }
-        setPendingFileBuffer(null)
-        setPendingFileName(null)
-        loadSettings()
-      }
-
-      // Creating new file: create initial backup
-      if (appLockAction === 'save-password' && pendingFileName) {
-        await ensureParentDirs(pendingFileName)
-        await setCloudSyncPath(pendingFileName)
-        setSettings(prev => ({ ...prev, filePath: pendingFileName }))
-        await createInitialBackup(pendingFileName)
-        setPendingFileName(null)
-      }
-
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       setMessage({ type: 'error', text: msg })
-      console.error('[CloudSync] AppLock save failed:', err)
+      console.error('[CloudSync] AppLock unlock failed:', err)
     } finally {
       setLoading(false)
       setPendingAction(null)
@@ -820,6 +849,12 @@ const CloudSyncSettings: React.FC = () => {
           <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4">
             <h3 className="text-lg font-semibold text-gray-900">{getPasswordModalTitle()}</h3>
 
+            {fileWarning && (
+              <div className="bg-amber-50 border border-amber-200 rounded-md p-2">
+                <p className="text-xs text-amber-700">{fileWarning}</p>
+              </div>
+            )}
+
             {passwordModalContext === 'verify-existing' ? (
               <p className="text-sm text-gray-600">
                 Enter the password for this backup file to verify ownership.
@@ -877,16 +912,30 @@ const CloudSyncSettings: React.FC = () => {
               </div>
             )}
 
+            {passwordModalContext !== 'create' && (
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-700">App PIN</label>
+                <input
+                  type="password"
+                  placeholder="Enter your app PIN"
+                  value={setupPin}
+                  onChange={e => setSetupPin(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                />
+                <p className="text-xs text-gray-500">Your app PIN is used to securely store the backup password.</p>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <button
                 onClick={handlePasswordModalPrimary}
-                disabled={loading || !password || (showConfirmInModal && !confirmPassword)}
+                disabled={loading || !password || (showConfirmInModal && !confirmPassword) || (passwordModalContext !== 'create' && !setupPin)}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
               >
                 {getPasswordModalButtonLabel()}
               </button>
               <button
-                onClick={() => { setShowPasswordModal(false); setPassword(''); setConfirmPassword(''); setVerifyError(false) }}
+                onClick={() => { setShowPasswordModal(false); setPassword(''); setConfirmPassword(''); setSetupPin(''); setVerifyError(false); setFileWarning(null) }}
                 className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
               >
                 Cancel

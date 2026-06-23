@@ -1,7 +1,7 @@
 {
-    "version": "1.1.57",
-    "versionCode": 10157,
-    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.57/app-release.apk",
+    "version": "1.1.58",
+    "versionCode": 10158,
+    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.58/app-release.apk",
     "force":  false,
-    "releaseNotes": "Desktop: Clean rebuild v1.1.57 ensuring schema.sql is bundled in resources/server/database via extraResources. Mobile: Fixed file picker extension check to be case-insensitive and allow proceeding with confirmation."
+    "releaseNotes": "Desktop: Overhauled cloud sync setup flow — file selection, password verification, and path saving now happen in one streamlined step. Mobile: Fixed Select Existing File bug by removing unreliable confirm() dialog, sanitizing base64 decoding, and combining setup steps. Both platforms now use a consistent single-modal setup flow with built-in PIN field."
 }
