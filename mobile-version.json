@@ -1,7 +1,7 @@
 {
-    "version": "1.1.59",
-    "versionCode": 10159,
-    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.59/app-release.apk",
+    "version": "1.1.60",
+    "versionCode": 10160,
+    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.60/app-release.apk",
     "force":  false,
-    "releaseNotes": "Mobile: Fixed Select Existing File by deferring file read until verification — modal now shows immediately after picking a file. Desktop: Added confirm password field to Select Existing File flow. Both platforms now validate password match before saving."
+    "releaseNotes": "Mobile: Select Existing File now persists state across Android activity recreation. Flow is: pick file → password modal (password + confirm + PIN) → App Lock → verify & save. Added cancel button to App Lock. Desktop: confirm password remains required."
 }

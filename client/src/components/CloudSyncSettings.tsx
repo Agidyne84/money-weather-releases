@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Capacitor } from '@capacitor/core'
+import { Preferences } from '@capacitor/preferences'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import {
   getCloudSyncSettings,
@@ -104,9 +105,31 @@ const CloudSyncSettings: React.FC = () => {
     loadSettings()
   }, [loadSettings])
 
-  // Safety net: clear any stuck loading state on mount
+  // Recovery: if the app was killed during file pick (Android lifecycle),
+  // restore the pending state from Preferences and show the password modal.
   useEffect(() => {
     setLoading(false)
+    const recover = async () => {
+      const { value } = await Preferences.get({ key: 'cloud_sync_pending_verify' })
+      if (value) {
+        try {
+          const pending = JSON.parse(value)
+          if (pending.uri) {
+            setPendingFileName(pending.uri)
+            setFileWarning(pending.warning || null)
+            setPassword('')
+            setConfirmPassword('')
+            setSetupPin('')
+            setVerifyError(false)
+            setPasswordModalContext('verify-existing')
+            setShowPasswordModal(true)
+          }
+        } catch {
+          await Preferences.remove({ key: 'cloud_sync_pending_verify' })
+        }
+      }
+    }
+    recover()
   }, [])
 
   const handleToggle = async () => {
@@ -186,15 +209,29 @@ const CloudSyncSettings: React.FC = () => {
     setLoading(true)
     setMessage(null)
     try {
+      // Persist a marker BEFORE opening the picker. If Android kills our activity
+      // while the picker is open, we'll recover on next mount.
+      await Preferences.set({
+        key: 'cloud_sync_pending_verify',
+        value: JSON.stringify({ uri: '', warning: '', stage: 'picking' }),
+      })
+
       const pick = await CloudFile.pickFile({ mimeType: '*/*' })
       console.log('[CloudSync] pickFile result:', pick.uri, pick.name)
+
+      // Picker succeeded — store the real URI and show the password modal
       const fileName = (pick.name || pick.uri || '').toString()
       const hasBackupExt = fileName.toLowerCase().endsWith('.budgetbackup')
-      setFileWarning(hasBackupExt ? null : `This file does not have a .budgetbackup extension (${fileName}). Make sure it is a valid backup.`)
+      const warning = hasBackupExt ? null : `This file does not have a .budgetbackup extension (${fileName}). Make sure it is a valid backup.`
+      setFileWarning(warning)
 
-      // Show the password modal immediately; we'll read & verify the file when the user clicks Verify
+      await Preferences.set({
+        key: 'cloud_sync_pending_verify',
+        value: JSON.stringify({ uri: pick.uri, warning, stage: 'verify' }),
+      })
+
       setPendingFileBuffer(null)
-      setPendingFileName(pick.uri) // store the persistent content:// URI as the path
+      setPendingFileName(pick.uri)
       setPassword('')
       setConfirmPassword('')
       setSetupPin('')
@@ -207,6 +244,7 @@ const CloudSyncSettings: React.FC = () => {
         console.error('[CloudSync] Select existing failed:', err)
         setMessage({ type: 'error', text: msg })
       }
+      await Preferences.remove({ key: 'cloud_sync_pending_verify' })
     } finally {
       setLoading(false)
     }
@@ -263,10 +301,20 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
+    // Close password modal and show App Lock for identity verification.
+    // Actual file verification and saving happen after successful unlock.
+    setShowPasswordModal(false)
+    setAppLockAction('verify-file')
+    setPendingAction('verify-file')
+    setShowAppLock(true)
+  }
+
+  const saveVerifiedFile = async () => {
+    if (!pendingFileName || !password || !setupPin) return
     setLoading(true)
     setVerifyError(false)
     try {
-      // Read the file if we haven't already (mobile defers reading until verification)
+      // Read the file if we haven't already
       let buffer: ArrayBuffer
       if (pendingFileBuffer) {
         buffer = pendingFileBuffer
@@ -318,19 +366,26 @@ const CloudSyncSettings: React.FC = () => {
         setConfirmPassword('')
         setSetupPin('')
         setFileWarning(null)
-        setShowPasswordModal(false)
+        setShowAppLock(false)
         setMessage({ type: 'success', text: 'Backup file verified and saved.' })
+        await Preferences.remove({ key: 'cloud_sync_pending_verify' })
         loadSettings()
       } else {
         setVerifyError(true)
+        setShowAppLock(false)
+        setShowPasswordModal(true)
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       setMessage({ type: 'error', text: msg })
       setVerifyError(true)
+      setShowAppLock(false)
+      setShowPasswordModal(true)
       console.error('[CloudSync] verify failed:', err)
     } finally {
       setLoading(false)
+      setPendingAction(null)
+      setAppLockAction('save-password')
     }
   }
 
@@ -382,6 +437,10 @@ const CloudSyncSettings: React.FC = () => {
   }
 
   const handleAppLockUnlock = () => {
+    if (appLockAction === 'verify-file') {
+      saveVerifiedFile()
+      return
+    }
     setShowAppLock(false)
     setPendingAction(null)
     setAppLockAction('save-password')
@@ -475,6 +534,12 @@ const CloudSyncSettings: React.FC = () => {
     if (!pendingAction) return
     setLoading(true)
     try {
+      if (appLockAction === 'verify-file') {
+        // App Lock passed — now verify the backup password and save everything
+        await saveVerifiedFile()
+        return
+      }
+
       // Unlocking passphrase for sync after app restart
       if (appLockAction === 'unlock-sync') {
         const ok = await unlockPassphrase(pin)
@@ -483,7 +548,6 @@ const CloudSyncSettings: React.FC = () => {
           return
         }
         setMessage({ type: 'success', text: 'Cloud sync password unlocked.' })
-        // Execute the specific sync action that was pending when the PIN prompt appeared
         if (pendingAction === 'refresh-sync') {
           await runRefreshSync()
         } else if (pendingAction === 'force-pull') {
@@ -498,9 +562,11 @@ const CloudSyncSettings: React.FC = () => {
       setMessage({ type: 'error', text: msg })
       console.error('[CloudSync] AppLock unlock failed:', err)
     } finally {
-      setLoading(false)
-      setPendingAction(null)
-      setShowAppLock(false)
+      if (appLockAction !== 'verify-file') {
+        setLoading(false)
+        setPendingAction(null)
+        setShowAppLock(false)
+      }
     }
   }
 
@@ -962,7 +1028,15 @@ const CloudSyncSettings: React.FC = () => {
                 {getPasswordModalButtonLabel()}
               </button>
               <button
-                onClick={() => { setShowPasswordModal(false); setPassword(''); setConfirmPassword(''); setSetupPin(''); setVerifyError(false); setFileWarning(null) }}
+                onClick={async () => {
+                  setShowPasswordModal(false)
+                  setPassword('')
+                  setConfirmPassword('')
+                  setSetupPin('')
+                  setVerifyError(false)
+                  setFileWarning(null)
+                  await Preferences.remove({ key: 'cloud_sync_pending_verify' })
+                }}
                 className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
               >
                 Cancel
@@ -1046,6 +1120,14 @@ const CloudSyncSettings: React.FC = () => {
         <AppLock
           onUnlock={handleAppLockUnlock}
           onUnlockWithPin={handleAppLockUnlockWithPin}
+          onCancel={
+            appLockAction === 'verify-file'
+              ? () => {
+                  setShowAppLock(false)
+                  setShowPasswordModal(true)
+                }
+              : undefined
+          }
         />
       )}
 

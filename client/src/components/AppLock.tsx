@@ -4,9 +4,10 @@ import { verifyPassword, isBiometricEnabled, isBiometricAvailable, authenticateW
 interface AppLockProps {
   onUnlock: () => void
   onUnlockWithPin?: (pin: string) => void
+  onCancel?: () => void
 }
 
-const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin }) => {
+const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }) => {
   const [pin, setPin] = useState('')
   const [error, setError] = useState(false)
   const [biometricReady, setBiometricReady] = useState(false)
@@ -17,6 +18,8 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin }) => {
   onUnlockRef.current = onUnlock
   const onUnlockWithPinRef = useRef(onUnlockWithPin)
   onUnlockWithPinRef.current = onUnlockWithPin
+  const onCancelRef = useRef(onCancel)
+  onCancelRef.current = onCancel
 
   // Desktop keyboard support
   useEffect(() => {
@@ -207,6 +210,15 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin }) => {
       >
         Unlock
       </button>
+
+      {onCancel && (
+        <button
+          onClick={() => { setPin(''); setError(false); onCancelRef.current?.() }}
+          className="mt-3 w-full max-w-xs py-3 rounded-xl bg-gray-100 text-gray-700 font-medium active:bg-gray-200"
+        >
+          Cancel
+        </button>
+      )}
 
       {biometricReady && (
         <button
