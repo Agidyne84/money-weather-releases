@@ -111,11 +111,13 @@ const CloudSyncSettings: React.FC = () => {
     setLoading(false)
     const recover = async () => {
       const { value } = await Preferences.get({ key: 'cloud_sync_pending_verify' })
+      console.log('[CloudSync] Recovery check:', value ? 'found marker' : 'no marker')
       if (value) {
         try {
           const pending = JSON.parse(value)
-          if (pending.uri) {
-            setPendingFileName(pending.uri)
+          if (pending.stage === 'verify') {
+            console.log('[CloudSync] Recovering verify modal for uri:', pending.uri)
+            setPendingFileName(pending.uri || null)
             setFileWarning(pending.warning || null)
             setPassword('')
             setConfirmPassword('')
@@ -123,6 +125,9 @@ const CloudSyncSettings: React.FC = () => {
             setVerifyError(false)
             setPasswordModalContext('verify-existing')
             setShowPasswordModal(true)
+          } else if (pending.stage === 'picking') {
+            console.log('[CloudSync] Cleaning up stale picking marker')
+            await Preferences.remove({ key: 'cloud_sync_pending_verify' })
           }
         } catch {
           await Preferences.remove({ key: 'cloud_sync_pending_verify' })
