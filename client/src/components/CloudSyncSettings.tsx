@@ -12,7 +12,6 @@ import {
   getCloudFileInfo,
   pullCloudBackup,
   pushCloudBackup,
-  performSync,
   refreshLocalPreferences,
   type CloudSyncMode,
 } from '../services/syncEngine'
@@ -20,6 +19,7 @@ import {
   hasStoredPassphrase,
   storePassphrase,
   getSessionPassphrase,
+  setSessionPassphrase,
   unlockPassphrase,
   deleteStoredPassphrase,
 } from '../services/securePassphrase'
@@ -60,9 +60,26 @@ const CloudSyncSettings: React.FC = () => {
   // For verifying an existing file
   const [pendingFileBuffer, setPendingFileBuffer] = useState<ArrayBuffer | null>(null)
   const [pendingFileName, setPendingFileName] = useState<string | null>(null)
+  const [pendingDisplayName, setPendingDisplayName] = useState<string | null>(null)
   const [verifyError, setVerifyError] = useState(false)
   const [fileWarning, setFileWarning] = useState<string | null>(null)
   const [setupPin, setSetupPin] = useState('')
+
+  const displayFilePath = (path: string | null) => {
+    if (!path) return 'Not set'
+    if (path.startsWith('content://')) {
+      try {
+        const decoded = decodeURIComponent(path)
+        const lastSlash = decoded.lastIndexOf('/')
+        if (lastSlash >= 0) {
+          const name = decoded.slice(lastSlash + 1)
+          if (name) return name
+        }
+      } catch {}
+      return 'Cloud file'
+    }
+    return path
+  }
 
   // Mobile folder browser for Create New
   const [showFolderBrowser, setShowFolderBrowser] = useState(false)
@@ -118,6 +135,7 @@ const CloudSyncSettings: React.FC = () => {
           if (pending.stage === 'verify') {
             console.log('[CloudSync] Recovering verify modal for uri:', pending.uri)
             setPendingFileName(pending.uri || null)
+            setPendingDisplayName(pending.name || null)
             setFileWarning(pending.warning || null)
             setPassword('')
             setConfirmPassword('')
@@ -232,11 +250,12 @@ const CloudSyncSettings: React.FC = () => {
 
       await Preferences.set({
         key: 'cloud_sync_pending_verify',
-        value: JSON.stringify({ uri: pick.uri, warning, stage: 'verify' }),
+        value: JSON.stringify({ uri: pick.uri, warning, stage: 'verify', name: pick.name || null }),
       })
 
       setPendingFileBuffer(null)
       setPendingFileName(pick.uri)
+      setPendingDisplayName(pick.name || null)
       setPassword('')
       setConfirmPassword('')
       setSetupPin('')
@@ -300,7 +319,6 @@ const CloudSyncSettings: React.FC = () => {
   const handleVerifyFilePassword = async () => {
     if (!pendingFileName) return
     if (!password) return
-    if (!setupPin) return
     if (password !== confirmPassword) {
       setMessage({ type: 'error', text: 'Passwords do not match.' })
       return
@@ -314,8 +332,8 @@ const CloudSyncSettings: React.FC = () => {
     setShowAppLock(true)
   }
 
-  const saveVerifiedFile = async () => {
-    if (!pendingFileName || !password || !setupPin) return
+  const saveVerifiedFile = async (pin?: string) => {
+    if (!pendingFileName || !password) return
     setLoading(true)
     setVerifyError(false)
     try {
@@ -342,8 +360,12 @@ const CloudSyncSettings: React.FC = () => {
 
       const ok = await verifyBackupPassword(buffer, password)
       if (ok) {
-        // Store passphrase encrypted with the user's PIN
-        await storePassphrase(setupPin, password)
+        // Store passphrase: encrypted with PIN if available, otherwise session-only
+        if (pin) {
+          await storePassphrase(pin, password)
+        } else {
+          setSessionPassphrase(password)
+        }
         setHasPassword(true)
 
         // Save the file path
@@ -367,6 +389,7 @@ const CloudSyncSettings: React.FC = () => {
         // Clean up pending state
         setPendingFileBuffer(null)
         setPendingFileName(null)
+        setPendingDisplayName(null)
         setPassword('')
         setConfirmPassword('')
         setSetupPin('')
@@ -441,7 +464,7 @@ const CloudSyncSettings: React.FC = () => {
     }
   }
 
-  const handleAppLockUnlock = () => {
+  const handleAppLockUnlock = useCallback(() => {
     if (appLockAction === 'verify-file') {
       saveVerifiedFile()
       return
@@ -449,7 +472,7 @@ const CloudSyncSettings: React.FC = () => {
     setShowAppLock(false)
     setPendingAction(null)
     setAppLockAction('save-password')
-  }
+  }, [appLockAction])
 
   // Convert ArrayBuffer to base64 without hitting JS argument limit
   const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
@@ -535,13 +558,13 @@ const CloudSyncSettings: React.FC = () => {
     setShowPasswordModal(true)
   }
 
-  const handleAppLockUnlockWithPin = async (pin: string) => {
+  const handleAppLockUnlockWithPin = useCallback(async (pin: string) => {
     if (!pendingAction) return
     setLoading(true)
     try {
       if (appLockAction === 'verify-file') {
         // App Lock passed — now verify the backup password and save everything
-        await saveVerifiedFile()
+        await saveVerifiedFile(pin)
         return
       }
 
@@ -553,9 +576,7 @@ const CloudSyncSettings: React.FC = () => {
           return
         }
         setMessage({ type: 'success', text: 'Cloud sync password unlocked.' })
-        if (pendingAction === 'refresh-sync') {
-          await runRefreshSync()
-        } else if (pendingAction === 'force-pull') {
+        if (pendingAction === 'force-pull') {
           await runForcePull()
         } else if (pendingAction === 'manual-sync') {
           await executeManualSync()
@@ -573,7 +594,7 @@ const CloudSyncSettings: React.FC = () => {
         setShowAppLock(false)
       }
     }
-  }
+  }, [appLockAction, pendingAction])
 
   const doSync = async () => {
     if (!settings.filePath) {
@@ -616,50 +637,6 @@ const CloudSyncSettings: React.FC = () => {
           .join(', ')
         setMessage({ type: 'success', text: `Pulled from cloud: ${counts}.` })
       }
-      loadSettings()
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleRefreshSync = async () => {
-    if (!settings.filePath) {
-      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
-      return
-    }
-
-    // Prompt for PIN if passphrase is not in session memory
-    if (!getSessionPassphrase()) {
-      const hasStored = await hasStoredPassphrase()
-      if (hasStored) {
-        setAppLockAction('unlock-sync')
-        setPendingAction('refresh-sync')
-        setShowAppLock(true)
-        return
-      }
-      setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
-      return
-    }
-
-    await runRefreshSync()
-  }
-
-  const runRefreshSync = async () => {
-    if (!settings.filePath) {
-      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
-      return
-    }
-    setLoading(true)
-    setMessage(null)
-    try {
-      const result = await performSync(settings.filePath)
-      if (result.action === 'pulled') {
-        await refreshLocalPreferences()
-        window.dispatchEvent(new CustomEvent('sync:pulled', { detail: result }))
-      }
-      setMessage({ type: result.action === 'error' ? 'error' : 'success', text: result.message })
       loadSettings()
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
@@ -792,14 +769,14 @@ const CloudSyncSettings: React.FC = () => {
                   The backup file could not be found at the configured path. It may have been moved or deleted.
                 </p>
                 <p className="text-xs text-red-700 break-all">
-                  Path: {settings.filePath || 'Not set'}
+                  {displayFilePath(settings.filePath)}
                 </p>
               </div>
             ) : (
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-700">Backup File</p>
-                  <p className="text-xs text-gray-500 break-all">{settings.filePath || 'Not set'}</p>
+                  <p className="text-xs text-gray-500 break-all">{displayFilePath(settings.filePath)}</p>
                 </div>
               </div>
             )}
@@ -830,20 +807,13 @@ const CloudSyncSettings: React.FC = () => {
             )}
           </div>
 
-          {/* Refresh Cloud Sync — always available */}
+          {/* Force Pull — always available */}
           {!fileMissing && (
             <div className="space-y-2">
               <button
-                onClick={handleRefreshSync}
-                disabled={loading || !canSync}
-                className="w-full px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Syncing...' : 'Refresh Cloud Sync'}
-              </button>
-              <button
                 onClick={handleForcePull}
                 disabled={loading || !canSync}
-                className="w-full px-4 py-2 bg-amber-600 text-white text-sm rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Pull latest data from cloud regardless of timestamps. Use when cloud provider sync delays cause stale local file."
               >
                 {loading ? 'Syncing...' : 'Force Pull from Cloud'}
@@ -955,7 +925,7 @@ const CloudSyncSettings: React.FC = () => {
 
             {passwordModalContext === 'verify-existing' ? (
               <p className="text-sm text-gray-600">
-                Enter the password for this backup file to verify ownership.
+                Enter the password for <span className="font-medium">{pendingDisplayName || displayFilePath(pendingFileName)}</span> to verify ownership.
               </p>
             ) : (
               <p className="text-sm text-gray-600">
@@ -1010,7 +980,7 @@ const CloudSyncSettings: React.FC = () => {
               </div>
             )}
 
-            {passwordModalContext !== 'create' && (
+            {passwordModalContext === 'create-new' && (
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-700">App PIN</label>
                 <input
@@ -1027,7 +997,7 @@ const CloudSyncSettings: React.FC = () => {
             <div className="flex gap-2">
               <button
                 onClick={handlePasswordModalPrimary}
-                disabled={loading || !password || (showConfirmInModal && !confirmPassword) || (passwordModalContext !== 'create' && !setupPin)}
+                disabled={loading || !password || (showConfirmInModal && !confirmPassword) || (passwordModalContext === 'create-new' && !setupPin)}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
               >
                 {getPasswordModalButtonLabel()}

@@ -20,6 +20,7 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }
   onUnlockWithPinRef.current = onUnlockWithPin
   const onCancelRef = useRef(onCancel)
   onCancelRef.current = onCancel
+  const biometricAttemptedRef = useRef(false)
 
   // Desktop keyboard support
   useEffect(() => {
@@ -35,7 +36,6 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }
             if (ok) {
               setPin('')
               onUnlockWithPinRef.current?.(nextPin)
-              onUnlockRef.current()
             } else if (nextPin.length >= 6) {
               setError(true)
               setPin('')
@@ -54,7 +54,6 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }
           if (ok) {
             setPin('')
             onUnlockWithPinRef.current?.(current)
-            onUnlockRef.current()
           } else {
             setError(true)
             setPin('')
@@ -87,8 +86,9 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }
       const bioAvailable = await isBiometricAvailable()
       const ready = bioEnabled && bioAvailable
       if (!cancelled) setBiometricReady(ready)
-      // Auto-trigger biometric prompt if enabled
-      if (ready && !cancelled) {
+      // Auto-trigger biometric prompt once per mount
+      if (ready && !cancelled && !biometricAttemptedRef.current) {
+        biometricAttemptedRef.current = true
         setTimeout(() => handleBiometric(), 400)
       }
     }
@@ -108,7 +108,6 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }
         if (ok) {
           setPin('')
           onUnlockWithPin?.(nextPin)
-          onUnlock()
         } else if (nextPin.length >= 6) {
           setError(true)
           setPin('')
@@ -133,7 +132,6 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }
       if (ok) {
         setPin('')
         onUnlockWithPin?.(pin)
-        onUnlock()
       } else {
         setError(true)
         setPin('')

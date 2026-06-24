@@ -150,6 +150,14 @@ export function getSessionPassphrase(): string | null {
 }
 
 /**
+ * Set the session passphrase directly (e.g. after biometric unlock
+ * when the PIN is not available for persistent encryption).
+ */
+export function setSessionPassphrase(passphrase: string): void {
+  sessionPassphrase = passphrase
+}
+
+/**
  * Clear the session passphrase from memory (called on app lock / background).
  */
 export function clearSessionPassphrase(): void {
