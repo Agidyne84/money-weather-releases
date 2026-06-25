@@ -35,7 +35,11 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }
           verifyPassword(nextPin).then((ok) => {
             if (ok) {
               setPin('')
-              onUnlockWithPinRef.current?.(nextPin)
+              if (onUnlockWithPinRef.current) {
+                onUnlockWithPinRef.current(nextPin)
+              } else {
+                onUnlockRef.current?.()
+              }
             } else if (nextPin.length >= 6) {
               setError(true)
               setPin('')
@@ -53,7 +57,11 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }
         verifyPassword(current).then((ok) => {
           if (ok) {
             setPin('')
-            onUnlockWithPinRef.current?.(current)
+            if (onUnlockWithPinRef.current) {
+              onUnlockWithPinRef.current(current)
+            } else {
+              onUnlockRef.current?.()
+            }
           } else {
             setError(true)
             setPin('')
@@ -107,7 +115,11 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }
       verifyPassword(nextPin).then((ok) => {
         if (ok) {
           setPin('')
-          onUnlockWithPin?.(nextPin)
+          if (onUnlockWithPin) {
+            onUnlockWithPin(nextPin)
+          } else {
+            onUnlock?.()
+          }
         } else if (nextPin.length >= 6) {
           setError(true)
           setPin('')
@@ -131,7 +143,11 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }
     verifyPassword(pin).then((ok) => {
       if (ok) {
         setPin('')
-        onUnlockWithPin?.(pin)
+        if (onUnlockWithPin) {
+          onUnlockWithPin(pin)
+        } else {
+          onUnlock?.()
+        }
       } else {
         setError(true)
         setPin('')
