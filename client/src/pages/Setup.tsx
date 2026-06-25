@@ -4,7 +4,6 @@ import BulkTransactionEntry from '../components/BulkTransactionImport'
 import CategoryManager from '../components/CategoryManager'
 import RulesManager from '../components/RulesManager'
 import { rulesApi } from '../services/database'
-import BackupRestore from '../components/BackupRestore'
 import AppLockSettings from '../components/AppLockSettings'
 import CloudSyncSettings from '../components/CloudSyncSettings'
 import MobileUpdateChecker from '../components/MobileUpdateChecker'
@@ -31,7 +30,6 @@ const Setup: React.FC = () => {
       <CategoryManager />
       <BulkTransactionEntry />
       {!hasRules && <RulesManager />}
-      <BackupRestore />
       <AppLockSettings />
       <MobileUpdateChecker />
     </div>
