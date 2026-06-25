@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.66",
-    "versionCode":  10166,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.66/app-release.apk",
+    "version":  "1.1.67",
+    "versionCode":  10167,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.67/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Consolidate Backup \u0026 Restore into Cloud Sync card. Hide Export/Restore in Automatic sync mode."
+    "releaseNotes":  "Remove redundant Export/Restore from Cloud Sync. Reset All Data moved to its own card at the bottom."
 }
