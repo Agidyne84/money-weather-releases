@@ -1,7 +1,7 @@
 ﻿{
-    "version": "1.1.64",
-    "versionCode": 10164,
-    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.64/app-release.apk",
+    "version":  "1.1.64",
+    "versionCode":  10164,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.64/app-release.apk",
     "force":  false,
-    "releaseNotes": "Fix mobile cloud backup path display and update sync status wording."
+    "releaseNotes":  "Fix mobile cloud backup path display and update sync status wording."
 }
