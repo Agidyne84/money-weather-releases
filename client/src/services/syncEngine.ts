@@ -24,6 +24,7 @@ const isNative = Capacitor.isNativePlatform()
 
 const CLOUD_SYNC_ENABLED_KEY = 'cloud_sync_enabled'
 const CLOUD_SYNC_PATH_KEY = 'cloud_sync_path'
+const CLOUD_SYNC_DISPLAY_NAME_KEY = 'cloud_sync_display_name'
 const CLOUD_SYNC_LAST_SYNC_KEY = 'cloud_sync_last_sync'
 const CLOUD_SYNC_MODE_KEY = 'cloud_sync_mode'
 
@@ -32,6 +33,7 @@ export type CloudSyncMode = 'auto' | 'manual'
 export interface CloudSyncSettings {
   enabled: boolean
   filePath: string | null
+  displayName: string | null
   lastSyncTimestamp: string | null
   syncMode: CloudSyncMode
 }
@@ -45,15 +47,17 @@ export interface CloudFileInfo {
 /* ─── Settings persistence ─── */
 
 export async function getCloudSyncSettings(): Promise<CloudSyncSettings> {
-  const [enabled, path, lastSync, mode] = await Promise.all([
+  const [enabled, path, displayName, lastSync, mode] = await Promise.all([
     Preferences.get({ key: CLOUD_SYNC_ENABLED_KEY }),
     Preferences.get({ key: CLOUD_SYNC_PATH_KEY }),
+    Preferences.get({ key: CLOUD_SYNC_DISPLAY_NAME_KEY }),
     Preferences.get({ key: CLOUD_SYNC_LAST_SYNC_KEY }),
     Preferences.get({ key: CLOUD_SYNC_MODE_KEY }),
   ])
   return {
     enabled: enabled.value === 'true',
     filePath: path.value || null,
+    displayName: displayName.value || null,
     lastSyncTimestamp: lastSync.value || null,
     syncMode: (mode.value as CloudSyncMode) || 'manual',
   }
@@ -67,6 +71,10 @@ export async function setCloudSyncPath(filePath: string): Promise<void> {
   await Preferences.set({ key: CLOUD_SYNC_PATH_KEY, value: filePath })
 }
 
+export async function setCloudSyncDisplayName(displayName: string): Promise<void> {
+  await Preferences.set({ key: CLOUD_SYNC_DISPLAY_NAME_KEY, value: displayName })
+}
+
 export async function setCloudSyncMode(mode: CloudSyncMode): Promise<void> {
   await Preferences.set({ key: CLOUD_SYNC_MODE_KEY, value: mode })
 }
@@ -78,6 +86,7 @@ export async function setLastSyncTimestamp(timestamp: string): Promise<void> {
 export async function clearCloudSyncSettings(): Promise<void> {
   await Preferences.remove({ key: CLOUD_SYNC_ENABLED_KEY })
   await Preferences.remove({ key: CLOUD_SYNC_PATH_KEY })
+  await Preferences.remove({ key: CLOUD_SYNC_DISPLAY_NAME_KEY })
   await Preferences.remove({ key: CLOUD_SYNC_LAST_SYNC_KEY })
   await Preferences.remove({ key: CLOUD_SYNC_MODE_KEY })
 }
@@ -239,6 +248,9 @@ export async function checkCloudSyncStatus(filePath: string): Promise<'newer' | 
     // Content URIs (SAF) do not expose reliable modification time.
     // Fall back to dirty-state heuristic: if local is dirty, push; otherwise pull.
     if (!info.modifiedAt) {
+      // Content URIs (SAF) don't expose reliable modification time.
+      // If we've synced before and nothing changed locally since, assume up to date.
+      if (lastSync && !isDirty()) return 'same'
       return isDirty() ? 'older' : 'newer'
     }
 

@@ -6,6 +6,7 @@ import {
   getCloudSyncSettings,
   setCloudSyncEnabled,
   setCloudSyncPath,
+  setCloudSyncDisplayName,
   setCloudSyncMode,
   clearCloudSyncSettings,
   checkCloudSyncStatus,
@@ -36,9 +37,10 @@ const CloudSyncSettings: React.FC = () => {
   const [settings, setSettings] = useState<{
     enabled: boolean
     filePath: string | null
+    displayName: string | null
     lastSyncTimestamp: string | null
     syncMode: CloudSyncMode
-  }>({ enabled: false, filePath: null, lastSyncTimestamp: null, syncMode: 'manual' })
+  }>({ enabled: false, filePath: null, displayName: null, lastSyncTimestamp: null, syncMode: 'manual' })
 
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -65,12 +67,14 @@ const CloudSyncSettings: React.FC = () => {
   const [fileWarning, setFileWarning] = useState<string | null>(null)
   const [setupPin, setSetupPin] = useState('')
 
-  const displayFilePath = (path: string | null) => {
+  const displayFilePath = (path: string | null, displayName?: string | null) => {
     if (!path) return 'Not set'
     if (path.startsWith('content://')) {
+      // Prefer stored display name from picker (actual filename, not URI path)
+      if (displayName) return displayName
+      // Fallback: try to extract from URI
       try {
         const decoded = decodeURIComponent(path)
-        // Strip query string before extracting filename
         const withoutQuery = decoded.split('?')[0]
         const lastSlash = withoutQuery.lastIndexOf('/')
         if (lastSlash >= 0) {
@@ -373,6 +377,7 @@ const CloudSyncSettings: React.FC = () => {
         // Save the file path
         if (isNative && pendingFileName.startsWith('content://')) {
           await setCloudSyncPath(pendingFileName)
+          if (pendingDisplayName) await setCloudSyncDisplayName(pendingDisplayName)
         } else if (isNative) {
           await ensureParentDirs(pendingFileName)
           const base64 = arrayBufferToBase64(buffer)
@@ -386,7 +391,7 @@ const CloudSyncSettings: React.FC = () => {
         } else {
           await setCloudSyncPath(pendingFileName)
         }
-        setSettings(prev => ({ ...prev, filePath: pendingFileName }))
+        setSettings(prev => ({ ...prev, filePath: pendingFileName, displayName: pendingDisplayName || prev.displayName }))
 
         // Clean up pending state
         setPendingFileBuffer(null)
@@ -439,14 +444,16 @@ const CloudSyncSettings: React.FC = () => {
       await storePassphrase(setupPin, password)
       setHasPassword(true)
 
-      // Save the file path
+      // Save the file path and display name
+      const displayName = pendingFileName.split(/[\\/]/).pop() || pendingFileName
       if (isNative) {
         await ensureParentDirs(pendingFileName)
         await setCloudSyncPath(pendingFileName)
       } else {
         await setCloudSyncPath(pendingFileName)
       }
-      setSettings(prev => ({ ...prev, filePath: pendingFileName }))
+      await setCloudSyncDisplayName(displayName)
+      setSettings(prev => ({ ...prev, filePath: pendingFileName, displayName }))
 
       // Create initial backup
       await createInitialBackup(pendingFileName)
@@ -700,7 +707,7 @@ const CloudSyncSettings: React.FC = () => {
     try {
       await clearCloudSyncSettings()
       await deleteStoredPassphrase()
-      setSettings({ enabled: false, filePath: null, lastSyncTimestamp: null, syncMode: 'manual' })
+      setSettings({ enabled: false, filePath: null, displayName: null, lastSyncTimestamp: null, syncMode: 'manual' })
       setHasPassword(false)
       setMessage({ type: 'success', text: 'Cloud sync settings reset. You can re-configure sync at any time.' })
     } catch (err) {
@@ -771,14 +778,14 @@ const CloudSyncSettings: React.FC = () => {
                   The backup file could not be found at the configured path. It may have been moved or deleted.
                 </p>
                 <p className="text-xs text-red-700 break-all">
-                  {displayFilePath(settings.filePath)}
+                  {displayFilePath(settings.filePath, settings.displayName)}
                 </p>
               </div>
             ) : (
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-700">Backup File</p>
-                  <p className="text-xs text-gray-500 break-all">{displayFilePath(settings.filePath)}</p>
+                  <p className="text-xs text-gray-500 break-all">{displayFilePath(settings.filePath, settings.displayName)}</p>
                 </div>
               </div>
             )}
