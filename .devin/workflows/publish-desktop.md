@@ -79,6 +79,7 @@ Confirm these assets exist:
 | Problem | Cause | Fix |
 |---------|-------|-----|
 | App doesn't detect update | Missing `latest.yml` or wrong version in `latest.yml` | Ensure publish completes, check assets on release page |
+| PIN unlock stops working after update | Stale build: `electron\client\dist` has old client files | Always run `npm run build:electron` from the project root; `publish-desktop.ps1` now blocks stale uploads |
 | `v1.1.1` broken | Incomplete release missing `.exe` and `latest.yml` | Skip it, publish newer version |
-| Workflow not triggering | This repo doesn't use GitHub Actions for releases | Local publish with `npm run publish` is the current method |
+| Workflow not triggering | This repo doesn't use GitHub Actions for releases | Local publish with `publish-desktop.ps1` is the current method |
 | Push blocked | Missing GitHub credentials | Inject token temporarily in remote URL |
