@@ -46,7 +46,7 @@ $ProgressPreference = 'SilentlyContinue'
 # ── Configuration ────────────────────────────────────────────────────────────
 $RepoOwner = 'Agidyne84'
 $RepoName  = 'money-weather-releases'
-$ApkPath   = 'client\android\app\build\outputs\apk\release\app-release.apk'
+$ApkPath   = Join-Path $PSScriptRoot 'client\android\app\build\outputs\apk\release\app-release.apk'
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 function Get-PackageJsonVersion {

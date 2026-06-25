@@ -1,7 +1,7 @@
-{
-    "version": "1.1.62",
-    "versionCode": 10162,
-    "downloadUrl": "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.62/app-release.apk",
+﻿{
+    "version":  "1.1.62",
+    "versionCode":  10162,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.62/app-release.apk",
     "force":  false,
-    "releaseNotes": "Mobile: Removed PIN field from verify-existing modal (App Lock handles auth). Fixed double biometric prompt. Content URIs now show filename instead of raw path. Removed Refresh Cloud Sync button. Force Pull is now blue. Desktop: confirm password remains required."
+    "releaseNotes":  "Mobile: Removed PIN field from verify-existing modal (App Lock handles auth). Fixed double biometric prompt. Content URIs now show filename instead of raw path. Removed Refresh Cloud Sync button. Force Pull is now blue. Desktop: confirm password remains required."
 }
