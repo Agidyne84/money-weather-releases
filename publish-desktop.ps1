@@ -89,9 +89,24 @@ $tag = "v$Version"
 $latestYmlName = "latest.yml"
 $latestYmlPath = Join-Path $DistDir $latestYmlName
 
+# ── Verify build freshness ───────────────────────────────────────────────────
+$clientIndex = Join-Path $ScriptDir 'client\dist\index.html'
+$electronClientIndex = Join-Path $ScriptDir 'electron\client\dist\index.html'
+if (Test-Path $clientIndex -PathType Leaf) {
+    if (-not (Test-Path $electronClientIndex -PathType Leaf)) {
+        throw "Stale build: electron\client\dist\index.html is missing.`nRun 'npm run build:electron' from the project root to rebuild everything."
+    }
+    $clientHash = (Get-FileHash $clientIndex -Algorithm SHA256).Hash
+    $electronClientHash = (Get-FileHash $electronClientIndex -Algorithm SHA256).Hash
+    if ($clientHash -ne $electronClientHash) {
+        throw "Stale build: electron\client\dist does not match client\dist.`nRun 'npm run build:electron' from the project root to rebuild everything."
+    }
+    Write-Host "Build freshness check passed." -ForegroundColor Green
+}
+
 # ── Verify latest.yml exists ─────────────────────────────────────────────────
 if (-not (Test-Path $latestYmlPath)) {
-    throw "Required file not found: $latestYmlPath`nRun electron build first."
+    throw "Required file not found: $latestYmlPath`nRun 'npm run build:electron' from the project root."
 }
 
 # ── Read actual artifact names from latest.yml ───────────────────────────────

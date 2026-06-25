@@ -20,13 +20,13 @@ Update version in ALL three `package.json` files:
 
 Use the same version string (e.g., `1.1.5`) in all three.
 
-### 2. Rebuild
+### 2. Rebuild (CRITICAL — do not skip)
 // turbo
 ```powershell
 cd "c:\Users\Raymond\CascadeProjects\BudgetApp"
-npm run build
+npm run build:electron
 ```
-This builds the server, builds the client, copies everything into `electron/`, and rebuilds `sqlite3` for Electron.
+**This MUST be run from the project root.** It builds the server, builds the client, copies everything into `electron/`, rebuilds `sqlite3` for Electron, and then packages the Electron app. Running `npm run build` or `cd electron && npm run build` directly will produce a stale build with old client files.
 
 ### 3. Commit and tag
 ```powershell
@@ -47,27 +47,27 @@ Remove the token from the remote URL immediately after pushing.
 ### 5. Publish release
 // turbo
 ```powershell
-cd "c:\Users\Raymond\CascadeProjects\BudgetApp\electron"
+cd "c:\Users\Raymond\CascadeProjects\BudgetApp"
 $env:GH_TOKEN="<TOKEN>"
-npm run publish
+.\publish-desktop.ps1
 ```
 
-This runs `electron-builder --publish=always`, which:
-- Packages the app for Windows (NSIS)
-- Creates `Money-Weather-Setup-X.Y.Z.exe`
-- Creates `latest.yml` (required for auto-updater)
-- Creates a GitHub Release at `vX.Y.Z`
-- Uploads `.exe`, `.blockmap`, and `latest.yml`
+`publish-desktop.ps1` now verifies build freshness before uploading. It will fail with a clear error if `electron\client\dist` does not match `client\dist`.
+
+This uploads:
+- `MoneyWeather-Setup-X.Y.Z.exe`
+- `MoneyWeather-Setup-X.Y.Z.exe.blockmap`
+- `latest.yml` (required for auto-updater)
 
 ### 6. Verify
 Check the release at: https://github.com/Agidyne84/money-weather-releases/releases/latest
 
 Confirm these assets exist:
-- `Money-Weather-Setup-X.Y.Z.exe`
-- `Money-Weather-Setup-X.Y.Z.exe.blockmap`
+- `MoneyWeather-Setup-X.Y.Z.exe`
+- `MoneyWeather-Setup-X.Y.Z.exe.blockmap`
 - `latest.yml`
 
-**Missing `latest.yml` will break auto-updates.**
+**Missing `latest.yml` or a stale build will break auto-updates or app functionality.**
 
 ## How auto-updates work
 - `electron-updater` checks GitHub Releases on app startup (3-second delay)
