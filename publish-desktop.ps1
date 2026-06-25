@@ -28,11 +28,12 @@ $ProgressPreference = 'SilentlyContinue'
 # ── Configuration ────────────────────────────────────────────────────────────
 $RepoOwner = 'Agidyne84'
 $RepoName  = 'money-weather-releases'
-$DistDir   = 'electron\dist'
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$DistDir   = Join-Path $ScriptDir 'electron\dist'
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 function Get-ElectronVersion {
-    $json = Get-Content 'electron\package.json' -Raw | ConvertFrom-Json
+    $json = Get-Content (Join-Path $ScriptDir 'electron\package.json') -Raw | ConvertFrom-Json
     return $json.version
 }
 
@@ -85,7 +86,7 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 }
 
 $tag = "v$Version"
-$setupName = "Money-Weather-Setup-$Version.exe"
+$setupName = "Money Weather Setup $Version.exe"
 $blockmapName = "$setupName.blockmap"
 $latestYmlName = "latest.yml"
 
