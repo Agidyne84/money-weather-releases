@@ -41,6 +41,7 @@
         "to": "assets/database"
       }
     ],
+    "artifactName": "MoneyWeather-Setup-${version}.${ext}",
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico",

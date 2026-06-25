@@ -86,15 +86,27 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 }
 
 $tag = "v$Version"
-$setupName = "Money Weather Setup $Version.exe"
-$blockmapName = "$setupName.blockmap"
 $latestYmlName = "latest.yml"
+$latestYmlPath = Join-Path $DistDir $latestYmlName
+
+# ── Verify latest.yml exists ─────────────────────────────────────────────────
+if (-not (Test-Path $latestYmlPath)) {
+    throw "Required file not found: $latestYmlPath`nRun electron build first."
+}
+
+# ── Read actual artifact names from latest.yml ───────────────────────────────
+$yml = Get-Content $latestYmlPath -Raw
+$ymlPathMatch = [regex]::Match($yml, '^path:\s*(.+)$', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+if (-not $ymlPathMatch.Success) {
+    throw "Could not parse 'path' from $latestYmlPath"
+}
+$setupName = $ymlPathMatch.Groups[1].Value.Trim()
+$blockmapName = "$setupName.blockmap"
 
 $setupPath = Join-Path $DistDir $setupName
 $blockmapPath = Join-Path $DistDir $blockmapName
-$latestYmlPath = Join-Path $DistDir $latestYmlName
 
-# ── Verify files exist ───────────────────────────────────────────────────────
+# ── Verify artifacts exist ───────────────────────────────────────────────────
 foreach ($f in @($setupPath, $blockmapPath, $latestYmlPath)) {
     if (-not (Test-Path $f)) {
         throw "Required file not found: $f`nRun electron build first."
