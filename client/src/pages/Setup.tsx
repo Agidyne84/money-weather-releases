@@ -7,6 +7,7 @@ import { rulesApi } from '../services/database'
 import AppLockSettings from '../components/AppLockSettings'
 import CloudSyncSettings from '../components/CloudSyncSettings'
 import MobileUpdateChecker from '../components/MobileUpdateChecker'
+import ResetAllData from '../components/ResetAllData'
 
 const Setup: React.FC = () => {
   const [hasRules, setHasRules] = useState(false)
@@ -32,6 +33,7 @@ const Setup: React.FC = () => {
       {!hasRules && <RulesManager />}
       <AppLockSettings />
       <MobileUpdateChecker />
+      <ResetAllData />
     </div>
   )
 }
