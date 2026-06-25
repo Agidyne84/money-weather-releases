@@ -70,9 +70,11 @@ const CloudSyncSettings: React.FC = () => {
     if (path.startsWith('content://')) {
       try {
         const decoded = decodeURIComponent(path)
-        const lastSlash = decoded.lastIndexOf('/')
+        // Strip query string before extracting filename
+        const withoutQuery = decoded.split('?')[0]
+        const lastSlash = withoutQuery.lastIndexOf('/')
         if (lastSlash >= 0) {
-          const name = decoded.slice(lastSlash + 1)
+          const name = withoutQuery.slice(lastSlash + 1)
           if (name) return name
         }
       } catch {}
@@ -97,9 +99,9 @@ const CloudSyncSettings: React.FC = () => {
       const isMissing = status === 'missing'
       setFileMissing(isMissing)
       const statusMap: Record<string, string> = {
-        newer: 'Cloud backup is newer than local',
-        older: 'Local is newer than cloud backup',
-        same: 'Cloud backup is up to date',
+        newer: 'Cloud backup is newer',
+        older: 'Ready to sync to cloud',
+        same: 'Synced with cloud',
         missing: 'Cloud backup file not found',
         error: 'Error checking cloud backup',
       }
