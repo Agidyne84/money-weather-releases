@@ -769,6 +769,37 @@ const CloudSyncSettings: React.FC = () => {
 
       {settings.enabled && (
         <>
+          {/* Auto / Manual Toggle */}
+          <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+            <div className="flex-1 min-w-0 mr-3">
+              <p className="text-sm font-medium text-gray-700">
+                Sync Mode &mdash; {settings.syncMode === 'auto' ? 'Automatic' : 'Manual'}
+              </p>
+            </div>
+            <button
+              onClick={handleSyncModeToggle}
+              disabled={fileMissing}
+              className="relative inline-flex h-6 w-12 flex-shrink-0 items-center rounded-full transition-colors bg-blue-600 disabled:opacity-40"
+              title="Toggle Auto / Manual"
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  settings.syncMode === 'auto' ? 'translate-x-7' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Auto mode info */}
+          {settings.syncMode === 'auto' && !fileMissing && (
+            <div className="bg-blue-50 rounded-md p-3">
+              <p className="text-sm text-blue-800 font-medium">Automatic Sync Active</p>
+              <p className="text-xs text-blue-700 mt-1">
+                Your data is kept in sync automatically. Local changes are pushed to the cloud shortly after you make them, and cloud changes are pulled automatically.
+              </p>
+            </div>
+          )}
+
           {/* File Path Card */}
           <div className="bg-gray-50 rounded-lg p-4 space-y-3">
             {fileMissing ? (
@@ -840,27 +871,6 @@ const CloudSyncSettings: React.FC = () => {
             </div>
           )}
 
-          {/* Auto / Manual Toggle */}
-          <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-            <div className="flex-1 min-w-0 mr-3">
-              <p className="text-sm font-medium text-gray-700">
-                Sync Mode &mdash; {settings.syncMode === 'auto' ? 'Automatic' : 'Manual'}
-              </p>
-            </div>
-            <button
-              onClick={handleSyncModeToggle}
-              disabled={fileMissing}
-              className="relative inline-flex h-6 w-12 flex-shrink-0 items-center rounded-full transition-colors bg-blue-600 disabled:opacity-40"
-              title="Toggle Auto / Manual"
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  settings.syncMode === 'auto' ? 'translate-x-7' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
           {/* Push / Pull Toggle + Sync Now (Manual mode only, hidden when file missing) */}
           {settings.syncMode === 'manual' && !fileMissing && (
             <div className="space-y-2">
@@ -894,16 +904,6 @@ const CloudSyncSettings: React.FC = () => {
                   {!settings.filePath ? 'Set a backup file path to enable sync.' : 'Set a password to enable sync.'}
                 </p>
               )}
-            </div>
-          )}
-
-          {/* Auto mode info */}
-          {settings.syncMode === 'auto' && !fileMissing && (
-            <div className="bg-blue-50 rounded-md p-3">
-              <p className="text-sm text-blue-800 font-medium">Automatic Sync Active</p>
-              <p className="text-xs text-blue-700 mt-1">
-                Your data is kept in sync automatically. Local changes are pushed to the cloud shortly after you make them, and cloud changes are pulled automatically.
-              </p>
             </div>
           )}
 
