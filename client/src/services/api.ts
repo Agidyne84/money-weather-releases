@@ -352,8 +352,10 @@ export const historyApi = {
     isTransfer?: boolean
     transferToAccountId?: string
     isSuppressed?: boolean
+    isExcluded?: boolean
     isManualEdit?: boolean
     isPosted?: boolean
+    bankDescription?: string
   }): Promise<HistoryRow> => {
     const response = await api.post('/history', row)
     return mapHistoryRow(response.data)

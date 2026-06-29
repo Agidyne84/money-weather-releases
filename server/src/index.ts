@@ -572,7 +572,7 @@ async function startServer() {
     })
 
     app.post('/api/history', async (req: any, res: any) => {
-      const { transactionId, accountId, categoryId, date, description, amount, type, isSuppressed, isManualEdit, isPosted, isTransfer, transferToAccountId } = req.body
+      const { transactionId, accountId, categoryId, date, description, amount, type, isSuppressed, isExcluded, isManualEdit, isPosted, isTransfer, transferToAccountId, bankDescription } = req.body
       if (!accountId || !categoryId || !date || !description || amount === undefined || !type) {
         return res.status(400).json({ error: 'Missing required fields' })
       }
@@ -580,9 +580,9 @@ async function startServer() {
         const histId = `hist_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
         await db.run(`
           INSERT INTO historical_transactions (
-            id, transaction_id, account_id, category_id, date, description, amount, type, is_suppressed, is_manual_edit, is_posted, is_transfer, transfer_to_account_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [histId, transactionId || null, accountId, categoryId, date, description, amount, type, isSuppressed ? 1 : 0, isManualEdit ? 1 : 0, isPosted !== undefined ? (isPosted ? 1 : 0) : 1, isTransfer ? 1 : 0, transferToAccountId || null])
+            id, transaction_id, account_id, category_id, date, description, amount, type, is_suppressed, is_excluded, is_manual_edit, is_posted, is_transfer, transfer_to_account_id, bank_description
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [histId, transactionId || null, accountId, categoryId, date, description, amount, type, isSuppressed ? 1 : 0, isExcluded ? 1 : 0, isManualEdit ? 1 : 0, isPosted !== undefined ? (isPosted ? 1 : 0) : 1, isTransfer ? 1 : 0, transferToAccountId || null, bankDescription || null])
 
         const row = await db.get(`
           SELECT h.*, c.name AS category_name, c.color AS category_color,

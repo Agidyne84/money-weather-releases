@@ -400,8 +400,10 @@ export const historyApi = {
     isTransfer?: boolean
     transferToAccountId?: string
     isSuppressed?: boolean
+    isExcluded?: boolean
     isManualEdit?: boolean
     isPosted?: boolean
+    bankDescription?: string
   }): Promise<HistoryRow> => {
     markDirty()
     await initializeDatabase()
@@ -411,14 +413,14 @@ export const historyApi = {
     await db.run(
       `INSERT INTO historical_transactions (
         id, transaction_id, account_id, category_id, date, description, amount, type,
-        transfer_to_account_id, is_transfer, is_suppressed, is_manual_edit, is_posted, archived_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        transfer_to_account_id, is_transfer, is_excluded, is_suppressed, is_manual_edit, is_posted, bank_description, archived_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, row.transactionId || null, row.accountId, row.categoryId,
         row.date, row.description, row.amount, row.type,
         row.transferToAccountId || null, row.isTransfer ? 1 : 0,
-        row.isSuppressed ? 1 : 0, row.isManualEdit ? 1 : 0,
-        row.isPosted !== false ? 1 : 0, now,
+        row.isExcluded ? 1 : 0, row.isSuppressed ? 1 : 0, row.isManualEdit ? 1 : 0,
+        row.isPosted !== false ? 1 : 0, row.bankDescription || null, now,
       ]
     )
     const result = await db.query(
@@ -462,9 +464,10 @@ export const historyApi = {
       isTransfer: ['is_transfer', v => v ? 1 : 0],
       transferToAccountId: ['transfer_to_account_id', v => v || null],
       isSuppressed: ['is_suppressed', v => v ? 1 : 0],
+      isExcluded: ['is_excluded', v => v ? 1 : 0],
       isManualEdit: ['is_manual_edit', v => v ? 1 : 0],
       isPosted: ['is_posted', v => v !== false ? 1 : 0],
-      isExcluded: ['is_excluded', v => v ? 1 : 0],
+      bankDescription: ['bank_description', v => v || null],
     }
     for (const [key, [col, transform]] of Object.entries(colMap)) {
       if ((patch as any)[key] !== undefined) {

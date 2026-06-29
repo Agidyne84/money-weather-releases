@@ -80,18 +80,31 @@ const Forecast: React.FC = () => {
 
   const [startDate, setStartDate] = useState(formatDateForStorage(new Date()))
 
-  // On mount: read start date from database (async init)
+  // On mount: read start date and visible accounts from database (async init)
   useEffect(() => {
-    getSavedStartDate().then(date => {
+    const init = async () => {
+      const date = await getSavedStartDate()
       setStartDate(date)
       localStorage.setItem('forecastStartDate', date)
-    })
+
+      try {
+        const prefs = await preferencesApi.getAll()
+        if (prefs['forecast_visible_accounts']) {
+          const visibleIds = JSON.parse(prefs['forecast_visible_accounts'])
+          setVisibleAccountIds(visibleIds)
+          localStorage.setItem('forecastVisibleAccounts', prefs['forecast_visible_accounts'])
+        }
+      } catch (e) {
+        console.error('[Forecast] Failed to load visible accounts from preferences:', e)
+      }
+    }
+    init()
   }, [])
 
-  // Listen for sync pulls so we pick up remote start date changes
+  // Listen for sync pulls so we pick up remote start date and visible account changes
   useEffect(() => {
     const handlePulled = async () => {
-      console.log('[Forecast] sync:pulled received — refreshing start date')
+      console.log('[Forecast] sync:pulled received — refreshing preferences')
       try {
         const prefs = await preferencesApi.getAll()
         if (prefs['forecast_start_date']) {
@@ -99,8 +112,13 @@ const Forecast: React.FC = () => {
           setStartDate(newDate)
           localStorage.setItem('forecastStartDate', newDate)
         }
+        if (prefs['forecast_visible_accounts']) {
+          const visibleIds = JSON.parse(prefs['forecast_visible_accounts'])
+          setVisibleAccountIds(visibleIds)
+          localStorage.setItem('forecastVisibleAccounts', prefs['forecast_visible_accounts'])
+        }
       } catch (e) {
-        console.error('[Forecast] Failed to refresh start date after sync:', e)
+        console.error('[Forecast] Failed to refresh preferences after sync:', e)
       }
     }
     window.addEventListener('sync:pulled', handlePulled)
@@ -178,9 +196,11 @@ const Forecast: React.FC = () => {
 
     setStartDate(newDate)
     localStorage.setItem('forecastStartDate', newDate)
-    preferencesApi.set('forecast_start_date', newDate).catch((e: any) => {
+    try {
+      await preferencesApi.set('forecast_start_date', newDate)
+    } catch (e: any) {
       console.error('[Forecast] Failed to save start date to preferences:', e)
-    })
+    }
     setSelectedTransactions([])
   }
   const [forecastMonths, setForecastMonths] = useState(60)
@@ -197,6 +217,9 @@ const Forecast: React.FC = () => {
         ? prev.filter(id => id !== accountId)
         : [...prev, accountId]
       localStorage.setItem('forecastVisibleAccounts', JSON.stringify(next))
+      preferencesApi.set('forecast_visible_accounts', JSON.stringify(next)).catch((e: any) => {
+        console.error('[Forecast] Failed to save visible accounts to preferences:', e)
+      })
       return next
     })
   }
@@ -207,6 +230,9 @@ const Forecast: React.FC = () => {
       .map(a => a.id)
     setVisibleAccountIds(defaultIds)
     localStorage.setItem('forecastVisibleAccounts', JSON.stringify(defaultIds))
+    preferencesApi.set('forecast_visible_accounts', JSON.stringify(defaultIds)).catch((e: any) => {
+      console.error('[Forecast] Failed to save visible accounts to preferences:', e)
+    })
   }
 
   const loadForecastData = async ({ silent = false }: { silent?: boolean } = {}) => {
