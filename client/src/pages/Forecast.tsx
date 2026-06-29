@@ -104,7 +104,7 @@ const Forecast: React.FC = () => {
   // Listen for sync pulls so we pick up remote start date and visible account changes
   useEffect(() => {
     const handlePulled = async () => {
-      console.log('[Forecast] sync:pulled received — refreshing preferences')
+      console.log('[Forecast] sync:pulled received — refreshing preferences and data')
       try {
         const prefs = await preferencesApi.getAll()
         if (prefs['forecast_start_date']) {
@@ -117,6 +117,8 @@ const Forecast: React.FC = () => {
           setVisibleAccountIds(visibleIds)
           localStorage.setItem('forecastVisibleAccounts', prefs['forecast_visible_accounts'])
         }
+        // Always reload forecast data so transactions/history match the pulled backup
+        await loadForecastData({ silent: true })
       } catch (e) {
         console.error('[Forecast] Failed to refresh preferences after sync:', e)
       }

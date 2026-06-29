@@ -207,6 +207,7 @@ async function doInitialize(): Promise<void> {
   await ensureColumn(db, 'transactions', 'is_transfer', 'INTEGER DEFAULT 0')
   await ensureColumn(db, 'historical_transactions', 'is_transfer', 'INTEGER DEFAULT 0')
   await ensureColumn(db, 'historical_transactions', 'is_excluded', 'INTEGER NOT NULL DEFAULT 0')
+  await ensureColumn(db, 'historical_transactions', 'bank_description', 'TEXT')
 
   await Preferences.set({ key: 'db_initialized', value: 'true' })
 }
@@ -270,4 +271,6 @@ export async function closeDatabase(): Promise<void> {
     }
     sqliteConnection = null
   }
+  connectionPromise = null
+  initPromise = null
 }

@@ -646,7 +646,7 @@ const CloudSyncSettings: React.FC = () => {
           .join(', ')
         setMessage({ type: 'success', text: `Pulled from cloud: ${counts}.` })
       }
-      loadSettings()
+      await loadSettings()
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
     } finally {
@@ -691,7 +691,7 @@ const CloudSyncSettings: React.FC = () => {
       } else {
         setMessage({ type: 'error', text: 'Force pull failed.' })
       }
-      loadSettings()
+      await loadSettings()
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
     } finally {

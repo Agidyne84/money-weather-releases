@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.71",
-    "versionCode":  10171,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.71/app-release.apk",
+    "version":  "1.1.72",
+    "versionCode":  10172,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.72/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Fix forecast start date and visible accounts syncing across devices. Ensure all history transaction fields sync correctly."
+    "releaseNotes":  "Fix mobile database connection caching after sync pulls. Fix missing bank_description migration. Fix forecast data reload after sync. Fix sync timestamp UI refresh."
 }
