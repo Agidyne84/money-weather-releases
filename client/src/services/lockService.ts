@@ -146,9 +146,14 @@ export async function verifyPassword(password: string): Promise<boolean> {
 
     // Try to decrypt the cloud sync passphrase using the PIN
     try {
-      await unlockPassphrase(password)
-    } catch {
-      // No stored passphrase or wrong passphrase — ignore
+      const ok = await unlockPassphrase(password)
+      if (ok) {
+        console.log('[lockService] App unlock decrypted cloud sync passphrase')
+      } else {
+        console.warn('[lockService] App unlock could not decrypt cloud sync passphrase (wrong PIN or none stored)')
+      }
+    } catch (e) {
+      console.warn('[lockService] unlockPassphrase error during app unlock:', e)
     }
 
     return true

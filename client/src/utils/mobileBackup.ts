@@ -207,11 +207,14 @@ export async function exportMobileBackup(passphrase?: string): Promise<Uint8Arra
 }
 
 export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: string): Promise<{ success: boolean; summary: Record<string, number> }> {
+  console.log('[MobileBackup] importMobileBackup starting, file size:', fileBuffer.byteLength, 'hasPassphrase:', !!passphrase)
   const fileBytes = new Uint8Array(fileBuffer)
   let jsonBytes: Uint8Array
 
   // Determine if encrypted
-  if (arrayEquals(fileBytes.subarray(0, 4), MAGIC)) {
+  const isEncrypted = arrayEquals(fileBytes.subarray(0, 4), MAGIC)
+  console.log('[MobileBackup] Backup appears encrypted:', isEncrypted)
+  if (isEncrypted) {
     if (!passphrase) {
       throw new Error('This backup file is encrypted. Please provide a password.')
     }
@@ -221,6 +224,9 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
   }
 
   const envelope: BackupEnvelope = JSON.parse(new TextDecoder().decode(jsonBytes))
+  console.log('[MobileBackup] Parsed envelope, tables:', Object.fromEntries(
+    Object.entries(envelope.tables).map(([k, v]) => [k, (v as any[]).length])
+  ))
 
   if (!validateEnvelope(envelope)) {
     throw new Error('Invalid backup file: schema validation failed')

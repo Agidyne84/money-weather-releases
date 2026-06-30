@@ -21,7 +21,6 @@ import {
   storePassphrase,
   getSessionPassphrase,
   setSessionPassphrase,
-  unlockPassphrase,
   deleteStoredPassphrase,
 } from '../services/securePassphrase'
 import { verifyBackupPassword, base64ToArrayBuffer } from '../utils/mobileBackup'
@@ -478,10 +477,6 @@ const CloudSyncSettings: React.FC = () => {
       saveVerifiedFile()
       return
     }
-    if (appLockAction === 'unlock-sync') {
-      // Biometric unlock doesn't give us the PIN needed to decrypt the cloud sync passphrase.
-      setMessage({ type: 'error', text: 'Please enter your PIN to unlock cloud sync.' })
-    }
     setShowAppLock(false)
     setPendingAction(null)
     setAppLockAction('save-password')
@@ -580,22 +575,6 @@ const CloudSyncSettings: React.FC = () => {
         await saveVerifiedFile(pin)
         return
       }
-
-      // Unlocking passphrase for sync after app restart
-      if (appLockAction === 'unlock-sync') {
-        const ok = await unlockPassphrase(pin)
-        if (!ok) {
-          setMessage({ type: 'error', text: 'Invalid PIN. Could not unlock cloud sync password.' })
-          return
-        }
-        setMessage({ type: 'success', text: 'Cloud sync password unlocked.' })
-        if (pendingAction === 'force-pull') {
-          await runForcePull()
-        } else if (pendingAction === 'manual-sync') {
-          await executeManualSync()
-        }
-        return
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       setMessage({ type: 'error', text: msg })
@@ -615,17 +594,17 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Session passphrase is volatile JS memory — if the app was restarted,
-    // we need to prompt for the PIN to decrypt it again.
+    // The cloud sync passphrase is decrypted into session memory when the app
+    // is unlocked with the PIN. If it's not available, the user unlocked with
+    // biometric or the passphrase was never stored.
     if (!getSessionPassphrase()) {
       const hasStored = await hasStoredPassphrase()
-      if (hasStored) {
-        setAppLockAction('unlock-sync')
-        setPendingAction('manual-sync')
-        setShowAppLock(true)
+      if (!hasStored) {
+        setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
         return
       }
-      setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
+      console.log('[CloudSync] doSync skipped: session passphrase not available')
+      setMessage({ type: 'error', text: 'Please unlock the app with your PIN to enable cloud sync. Biometric unlock does not unlock the cloud sync password.' })
       return
     }
 
@@ -666,13 +645,12 @@ const CloudSyncSettings: React.FC = () => {
 
     if (!getSessionPassphrase()) {
       const hasStored = await hasStoredPassphrase()
-      if (hasStored) {
-        setAppLockAction('unlock-sync')
-        setPendingAction('force-pull')
-        setShowAppLock(true)
+      if (!hasStored) {
+        setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
         return
       }
-      setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
+      console.log('[CloudSync] handleForcePull skipped: session passphrase not available')
+      setMessage({ type: 'error', text: 'Please unlock the app with your PIN to enable cloud sync. Biometric unlock does not unlock the cloud sync password.' })
       return
     }
 
@@ -687,7 +665,9 @@ const CloudSyncSettings: React.FC = () => {
     setLoading(true)
     setMessage(null)
     try {
+      console.log('[CloudSync] runForcePull starting:', settings.filePath)
       const result = await pullCloudBackup(settings.filePath)
+      console.log('[CloudSync] runForcePull result:', result)
       if (result.success) {
         await refreshLocalPreferences()
         window.dispatchEvent(new CustomEvent('sync:pulled', { detail: result }))
@@ -697,6 +677,7 @@ const CloudSyncSettings: React.FC = () => {
       }
       await loadSettings()
     } catch (err) {
+      console.error('[CloudSync] runForcePull error:', err)
       setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
     } finally {
       setLoading(false)
@@ -1108,7 +1089,6 @@ const CloudSyncSettings: React.FC = () => {
         <AppLock
           onUnlock={handleAppLockUnlock}
           onUnlockWithPin={handleAppLockUnlockWithPin}
-          disableBiometric={appLockAction === 'unlock-sync'}
           onCancel={
             appLockAction === 'verify-file'
               ? () => {

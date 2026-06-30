@@ -217,9 +217,11 @@ export async function getCloudFileInfo(filePath: string): Promise<CloudFileInfo>
 
 export async function pullCloudBackup(filePath: string): Promise<{ success: boolean; summary: Record<string, number> }> {
   const passphrase = getSessionPassphrase() || undefined
+  console.log('[SyncEngine] pullCloudBackup:', { filePath, hasPassphrase: !!passphrase, isNative })
   const result = isNative
     ? await mobilePull(filePath, passphrase)
     : await desktopPull(filePath, passphrase)
+  console.log('[SyncEngine] pullCloudBackup result:', result)
   if (result.success) {
     await setLastSyncTimestamp(new Date().toISOString())
     clearDirty()
