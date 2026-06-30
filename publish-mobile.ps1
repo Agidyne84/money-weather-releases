@@ -155,17 +155,38 @@ if (-not $SkipBuild) {
 
     Write-Host "  Building React web app..." -ForegroundColor Gray
     Set-Location client
-    npm run build 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+    $oldEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        npm run build 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        if ($LASTEXITCODE -ne 0) { throw "React build failed (exit code $LASTEXITCODE)" }
+    } finally {
+        $ErrorActionPreference = $oldEAP
+    }
     Set-Location ..
 
     Write-Host "  Syncing Capacitor..." -ForegroundColor Gray
     Set-Location client
-    npx cap sync 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+    $oldEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        npx cap sync 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        if ($LASTEXITCODE -ne 0) { throw "Capacitor sync failed (exit code $LASTEXITCODE)" }
+    } finally {
+        $ErrorActionPreference = $oldEAP
+    }
     Set-Location ..
 
     Write-Host "  Building with Gradle..." -ForegroundColor Gray
     Set-Location client\android
-    .\gradlew.bat assembleRelease 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+    $oldEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        .\gradlew.bat assembleRelease 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        if ($LASTEXITCODE -ne 0) { throw "Gradle build failed (exit code $LASTEXITCODE)" }
+    } finally {
+        $ErrorActionPreference = $oldEAP
+    }
     Set-Location ..\..
 
     Test-ApkExists $ApkPath
@@ -220,7 +241,7 @@ Write-Host "mobile-version.json updated." -ForegroundColor Green
 
 # ── Git commit and push ──────────────────────────────────────────────────────
 Write-Host "`nCommitting changes..." -ForegroundColor Cyan
-git add mobile-version.json client/android/app/build.gradle 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+git add mobile-version.json 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
 $commitMsg = "Bump mobile to v$Version"
 git diff --cached --quiet; if ($LASTEXITCODE -ne 0) {
     git commit -m $commitMsg 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
