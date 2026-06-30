@@ -7,6 +7,7 @@ let dbConnection: SQLiteDBConnection | null = null
 let sqliteConnection: SQLiteConnection | null = null
 let connectionPromise: Promise<SQLiteDBConnection> | null = null
 let initPromise: Promise<void> | null = null
+let forceNewConnection = false
 
 // Embedded schema — avoids fetch() issues in Capacitor WebView
 const SCHEMA = `
@@ -150,7 +151,30 @@ INSERT OR IGNORE INTO user_preferences (key, value) VALUES
 async function doGetConnection(): Promise<SQLiteDBConnection> {
   sqliteConnection = new SQLiteConnection(CapacitorSQLite)
 
-  // Check if connection exists and retrieve it, otherwise create new
+  // If we recently closed the database, force a brand-new native connection.
+  // isConnection()/retrieveConnection() can return a stale native handle that
+  // still points to pre-import data, so we bypass them entirely.
+  if (forceNewConnection) {
+    forceNewConnection = false
+    try {
+      await sqliteConnection.closeConnection(DB_NAME, false)
+      console.log('[Mobile DB] Forced close of old connection before reopening')
+    } catch {
+      // Old connection may already be closed — that's fine
+    }
+    dbConnection = await sqliteConnection.createConnection(
+      DB_NAME,
+      false,
+      'no-encryption',
+      1,
+      false
+    )
+    await dbConnection.open()
+    console.log('[Mobile DB] Created fresh connection after closeDatabase')
+    return dbConnection
+  }
+
+  // Normal path — reuse existing connection if the native plugin reports one
   const isConn = await sqliteConnection.isConnection(DB_NAME, false)
   if (isConn.result) {
     dbConnection = await sqliteConnection.retrieveConnection(DB_NAME, false)
@@ -271,6 +295,7 @@ export async function closeDatabase(): Promise<void> {
     }
     sqliteConnection = null
   }
+  forceNewConnection = true
   connectionPromise = null
   initPromise = null
 }

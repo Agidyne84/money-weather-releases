@@ -478,6 +478,10 @@ const CloudSyncSettings: React.FC = () => {
       saveVerifiedFile()
       return
     }
+    if (appLockAction === 'unlock-sync') {
+      // Biometric unlock doesn't give us the PIN needed to decrypt the cloud sync passphrase.
+      setMessage({ type: 'error', text: 'Please enter your PIN to unlock cloud sync.' })
+    }
     setShowAppLock(false)
     setPendingAction(null)
     setAppLockAction('save-password')
@@ -1104,6 +1108,7 @@ const CloudSyncSettings: React.FC = () => {
         <AppLock
           onUnlock={handleAppLockUnlock}
           onUnlockWithPin={handleAppLockUnlockWithPin}
+          disableBiometric={appLockAction === 'unlock-sync'}
           onCancel={
             appLockAction === 'verify-file'
               ? () => {

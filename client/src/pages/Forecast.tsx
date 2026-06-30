@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Account, ForecastTransaction, BalanceForecast, LowBalanceAnalysis, Category } from '../types'
 import { accountsApi, transactionsApi, categoriesApi, historyApi, preferencesApi } from '../services/database'
 import { createSafeDate, formatDateForDisplay, formatDateForInput, formatDateForStorage } from '../utils/dateUtils'
@@ -101,6 +101,8 @@ const Forecast: React.FC = () => {
     init()
   }, [])
 
+  const loadForecastDataRef = useRef<(opts?: { silent?: boolean }) => Promise<void>>(async () => {})
+
   // Listen for sync pulls so we pick up remote start date and visible account changes
   useEffect(() => {
     const handlePulled = async () => {
@@ -118,7 +120,7 @@ const Forecast: React.FC = () => {
           localStorage.setItem('forecastVisibleAccounts', prefs['forecast_visible_accounts'])
         }
         // Always reload forecast data so transactions/history match the pulled backup
-        await loadForecastData({ silent: true })
+        await loadForecastDataRef.current({ silent: true })
       } catch (e) {
         console.error('[Forecast] Failed to refresh preferences after sync:', e)
       }
@@ -321,6 +323,7 @@ const Forecast: React.FC = () => {
       setLoading(false)
     }
   }
+  loadForecastDataRef.current = loadForecastData
 
   const handleSaveBalances = async () => {
     try {

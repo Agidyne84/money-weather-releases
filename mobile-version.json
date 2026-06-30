@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.72",
-    "versionCode":  10172,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.72/app-release.apk",
+    "version":  "1.1.75",
+    "versionCode":  10175,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.75/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Fix mobile database connection caching after sync pulls. Fix missing bank_description migration. Fix forecast data reload after sync. Fix sync timestamp UI refresh."
+    "releaseNotes":  "Force fresh SQLite connection after sync import. Add post-import data validation. Add sync timestamp logging. Fixes mobile sync pipeline."
 }

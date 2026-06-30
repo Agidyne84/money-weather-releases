@@ -5,9 +5,10 @@ interface AppLockProps {
   onUnlock: () => void
   onUnlockWithPin?: (pin: string) => void
   onCancel?: () => void
+  disableBiometric?: boolean
 }
 
-const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }) => {
+const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel, disableBiometric = false }) => {
   const [pin, setPin] = useState('')
   const [error, setError] = useState(false)
   const [biometricReady, setBiometricReady] = useState(false)
@@ -94,15 +95,15 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }
       const bioAvailable = await isBiometricAvailable()
       const ready = bioEnabled && bioAvailable
       if (!cancelled) setBiometricReady(ready)
-      // Auto-trigger biometric prompt once per mount
-      if (ready && !cancelled && !biometricAttemptedRef.current) {
+      // Auto-trigger biometric prompt once per mount (unless caller requires PIN)
+      if (ready && !cancelled && !biometricAttemptedRef.current && !disableBiometric) {
         biometricAttemptedRef.current = true
         setTimeout(() => handleBiometric(), 400)
       }
     }
     checkBio()
     return () => { cancelled = true }
-  }, [handleBiometric])
+  }, [handleBiometric, disableBiometric])
 
   const handleDigit = useCallback((digit: string) => {
     if (pin.length >= 6) return
@@ -234,7 +235,7 @@ const AppLock: React.FC<AppLockProps> = ({ onUnlock, onUnlockWithPin, onCancel }
         </button>
       )}
 
-      {biometricReady && (
+      {biometricReady && !disableBiometric && (
         <button
           onClick={handleBiometric}
           className="mt-3 w-full max-w-xs py-3 rounded-xl bg-gray-100 text-gray-700 font-medium active:bg-gray-200 flex items-center justify-center gap-2"

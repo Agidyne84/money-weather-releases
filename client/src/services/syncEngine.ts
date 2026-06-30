@@ -54,6 +54,7 @@ export async function getCloudSyncSettings(): Promise<CloudSyncSettings> {
     Preferences.get({ key: CLOUD_SYNC_LAST_SYNC_KEY }),
     Preferences.get({ key: CLOUD_SYNC_MODE_KEY }),
   ])
+  console.log('[SyncEngine] getCloudSyncSettings lastSync:', lastSync.value)
   return {
     enabled: enabled.value === 'true',
     filePath: path.value || null,
@@ -80,7 +81,13 @@ export async function setCloudSyncMode(mode: CloudSyncMode): Promise<void> {
 }
 
 export async function setLastSyncTimestamp(timestamp: string): Promise<void> {
-  await Preferences.set({ key: CLOUD_SYNC_LAST_SYNC_KEY, value: timestamp })
+  try {
+    await Preferences.set({ key: CLOUD_SYNC_LAST_SYNC_KEY, value: timestamp })
+    console.log('[SyncEngine] setLastSyncTimestamp:', timestamp)
+  } catch (e) {
+    console.error('[SyncEngine] Failed to set last sync timestamp:', e)
+    throw e
+  }
 }
 
 export async function clearCloudSyncSettings(): Promise<void> {

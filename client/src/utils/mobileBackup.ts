@@ -310,6 +310,35 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
     throw new Error(`Restore failed: ${(error as Error).message}`)
   }
 
+  // ── Post-import validation ──
+  // Ensure the database actually contains the imported data.
+  // A stale native connection can cause executeSet to succeed without
+  // the writes being visible to subsequent queries.
+  try {
+    const prefsResult = await db.query('SELECT key, value FROM user_preferences WHERE key = ?', ['forecast_start_date'])
+    const importedPrefs = envelope.tables.user_preferences
+    const importedStartDate = importedPrefs.find((p: any) => p.key === 'forecast_start_date')?.value
+    const dbStartDate = (prefsResult.values || [])[0]?.value
+
+    if (importedStartDate && dbStartDate !== importedStartDate) {
+      console.warn('[MobileBackup] Post-import validation FAILED: forecast_start_date mismatch.')
+      console.warn('  Imported:', importedStartDate, '  DB:', dbStartDate)
+      throw new Error('Post-import validation failed: user_preferences not reflecting imported data.')
+    }
+
+    const acctResult = await db.query('SELECT COUNT(*) as count FROM accounts')
+    const dbAccountCount = (acctResult.values || [])[0]?.count || 0
+    if (dbAccountCount !== envelope.tables.accounts.length) {
+      console.warn('[MobileBackup] Post-import validation FAILED: account count mismatch.')
+      console.warn('  Imported:', envelope.tables.accounts.length, '  DB:', dbAccountCount)
+      throw new Error('Post-import validation failed: account count mismatch.')
+    }
+
+    console.log('[MobileBackup] Post-import validation passed.')
+  } catch (validationError) {
+    throw new Error(`Restore validation failed: ${(validationError as Error).message}`)
+  }
+
   return {
     success: true,
     summary: {
