@@ -21,6 +21,7 @@ import {
   storePassphrase,
   getSessionPassphrase,
   setSessionPassphrase,
+  clearSessionPassphrase,
   deleteStoredPassphrase,
 } from '../services/securePassphrase'
 import { verifyBackupPassword, base64ToArrayBuffer } from '../utils/mobileBackup'
@@ -29,7 +30,7 @@ import AppLock from './AppLock'
 
 const isNative = Capacitor.isNativePlatform()
 
-type PasswordModalContext = 'create' | 'verify-existing' | 'create-new'
+type PasswordModalContext = 'create' | 'verify-existing' | 'create-new' | 'sync-password'
 type SyncMode = 'push' | 'pull'
 
 const CloudSyncSettings: React.FC = () => {
@@ -594,17 +595,21 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // The cloud sync passphrase is decrypted into session memory when the app
-    // is unlocked with the PIN. If it's not available, the user unlocked with
-    // biometric or the passphrase was never stored.
+    // If the session passphrase isn't available, ask for the backup password
+    // directly. This can happen after biometric unlock or a fresh app start.
     if (!getSessionPassphrase()) {
       const hasStored = await hasStoredPassphrase()
       if (!hasStored) {
         setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
         return
       }
-      console.log('[CloudSync] doSync skipped: session passphrase not available')
-      setMessage({ type: 'error', text: 'Please unlock the app with your PIN to enable cloud sync. Biometric unlock does not unlock the cloud sync password.' })
+      setPassword('')
+      setConfirmPassword('')
+      setSetupPin('')
+      setVerifyError(false)
+      setPasswordModalContext('sync-password')
+      setPendingAction('manual-sync')
+      setShowPasswordModal(true)
       return
     }
 
@@ -649,8 +654,13 @@ const CloudSyncSettings: React.FC = () => {
         setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
         return
       }
-      console.log('[CloudSync] handleForcePull skipped: session passphrase not available')
-      setMessage({ type: 'error', text: 'Please unlock the app with your PIN to enable cloud sync. Biometric unlock does not unlock the cloud sync password.' })
+      setPassword('')
+      setConfirmPassword('')
+      setSetupPin('')
+      setVerifyError(false)
+      setPasswordModalContext('sync-password')
+      setPendingAction('force-pull')
+      setShowPasswordModal(true)
       return
     }
 
@@ -704,10 +714,40 @@ const CloudSyncSettings: React.FC = () => {
 
   const canSync = settings.enabled && !!settings.filePath && hasPassword
 
+  const handleSyncPassword = async () => {
+    if (!password) return
+    if (!pendingAction) return
+    setLoading(true)
+    setMessage(null)
+    try {
+      // Temporarily set the session passphrase to the password the user entered
+      // and attempt the sync. If the password is wrong, the pull/push will fail
+      // with a decryption error and the passphrase is cleared.
+      setSessionPassphrase(password)
+      setShowPasswordModal(false)
+      setPassword('')
+      setConfirmPassword('')
+      setSetupPin('')
+      if (pendingAction === 'force-pull') {
+        await runForcePull()
+      } else if (pendingAction === 'manual-sync') {
+        await executeManualSync()
+      }
+    } catch (err) {
+      console.error('[CloudSync] sync password error:', err)
+      clearSessionPassphrase()
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setLoading(false)
+      setPendingAction(null)
+    }
+  }
+
   const getPasswordModalTitle = () => {
     switch (passwordModalContext) {
       case 'verify-existing': return 'Verify Backup Password'
       case 'create-new': return 'Create Password for New Backup'
+      case 'sync-password': return 'Enter Backup Password'
       default: return hasPassword ? 'Change Encryption Password' : 'Create Encryption Password'
     }
   }
@@ -717,6 +757,7 @@ const CloudSyncSettings: React.FC = () => {
     switch (passwordModalContext) {
       case 'verify-existing': return 'Verify Password'
       case 'create-new': return 'Save Password'
+      case 'sync-password': return 'Sync'
       default: return 'Save Password'
     }
   }
@@ -724,12 +765,14 @@ const CloudSyncSettings: React.FC = () => {
   const handlePasswordModalPrimary = () => {
     if (passwordModalContext === 'verify-existing') {
       handleVerifyFilePassword()
+    } else if (passwordModalContext === 'sync-password') {
+      handleSyncPassword()
     } else {
       handleSaveNewFilePassword()
     }
   }
 
-  const showConfirmInModal = true
+  const showConfirmInModal = passwordModalContext !== 'sync-password'
 
   return (
     <div className="space-y-6">
@@ -921,6 +964,10 @@ const CloudSyncSettings: React.FC = () => {
               <p className="text-sm text-gray-600">
                 Enter the password for <span className="font-medium">{pendingDisplayName || displayFilePath(pendingFileName)}</span> to verify ownership.
               </p>
+            ) : passwordModalContext === 'sync-password' ? (
+              <p className="text-sm text-gray-600">
+                Enter your cloud backup password to sync. This is the same password used on your other devices.
+              </p>
             ) : (
               <p className="text-sm text-gray-600">
                 This password encrypts your cloud backup files. Use the same password on all devices.
@@ -929,12 +976,12 @@ const CloudSyncSettings: React.FC = () => {
 
             <div className="space-y-1">
               <label className="block text-xs font-medium text-gray-700">
-                {passwordModalContext === 'verify-existing' ? 'Password' : 'New Password'}
+                {passwordModalContext === 'verify-existing' || passwordModalContext === 'sync-password' ? 'Password' : 'New Password'}
               </label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder={passwordModalContext === 'verify-existing' ? 'Enter password' : 'Enter password (min 8 chars)'}
+                  placeholder={passwordModalContext === 'verify-existing' || passwordModalContext === 'sync-password' ? 'Enter password' : 'Enter password (min 8 chars)'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   className={`w-full px-3 py-2 border rounded-md text-sm pr-12 ${
