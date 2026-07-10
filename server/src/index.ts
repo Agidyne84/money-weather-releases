@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import path from 'path'
 import fs from 'fs'
+import crypto from 'crypto'
 import { getDatabase, initializeDatabase, Database } from './database'
 import { validateAccount, validateCategory, validateTransaction, validatePreference } from './validation'
 import { generateBalanceForecast, generateForecastTransactions, generateLowBalanceAnalysis } from './forecast'
@@ -190,7 +191,8 @@ async function startServer() {
         }
         const fileBuffer = fs.readFileSync(filePath)
         const result = await importDatabase(fileBuffer, passphrase || undefined)
-        res.json(result)
+        const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex')
+        res.json({ ...result, hash })
       } catch (error) {
         console.error('[Sync Pull] Error:', error)
         res.status(500).json({ error: (error as Error).message })
@@ -206,7 +208,8 @@ async function startServer() {
         const buffer = await exportDatabase(passphrase || undefined)
         fs.writeFileSync(filePath, buffer)
         const stat = fs.statSync(filePath)
-        res.json({ success: true, modifiedAt: stat.mtime.toISOString(), size: stat.size })
+        const hash = crypto.createHash('sha256').update(buffer).digest('hex')
+        res.json({ success: true, modifiedAt: stat.mtime.toISOString(), size: stat.size, hash })
       } catch (error) {
         console.error('[Sync Push] Error:', error)
         res.status(500).json({ error: (error as Error).message })

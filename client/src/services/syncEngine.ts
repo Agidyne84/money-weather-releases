@@ -27,6 +27,7 @@ const CLOUD_SYNC_PATH_KEY = 'cloud_sync_path'
 const CLOUD_SYNC_DISPLAY_NAME_KEY = 'cloud_sync_display_name'
 const CLOUD_SYNC_LAST_SYNC_KEY = 'cloud_sync_last_sync'
 const CLOUD_SYNC_FILE_SIZE_KEY = 'cloud_sync_last_file_size'
+const CLOUD_SYNC_FILE_HASH_KEY = 'cloud_sync_last_file_hash'
 const CLOUD_SYNC_MODE_KEY = 'cloud_sync_mode'
 
 export type CloudSyncMode = 'auto' | 'manual'
@@ -81,13 +82,28 @@ export async function setCloudSyncMode(mode: CloudSyncMode): Promise<void> {
   await Preferences.set({ key: CLOUD_SYNC_MODE_KEY, value: mode })
 }
 
-export async function setLastSyncTimestamp(timestamp: string, fileSize?: number): Promise<void> {
+async function computeFileFingerprint(buffer: ArrayBuffer): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', buffer)
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+async function getStoredFileFingerprint(): Promise<string | null> {
+  const { value } = await Preferences.get({ key: CLOUD_SYNC_FILE_HASH_KEY })
+  return value || null
+}
+
+export async function setLastSyncTimestamp(timestamp: string, fileSize?: number, fileHash?: string): Promise<void> {
   try {
     await Preferences.set({ key: CLOUD_SYNC_LAST_SYNC_KEY, value: timestamp })
     if (typeof fileSize === 'number') {
       await Preferences.set({ key: CLOUD_SYNC_FILE_SIZE_KEY, value: fileSize.toString() })
     }
-    console.log('[SyncEngine] setLastSyncTimestamp:', timestamp, 'size:', fileSize)
+    if (fileHash) {
+      await Preferences.set({ key: CLOUD_SYNC_FILE_HASH_KEY, value: fileHash })
+    }
+    console.log('[SyncEngine] setLastSyncTimestamp:', timestamp, 'size:', fileSize, 'hash:', fileHash?.slice(0, 16))
   } catch (e) {
     console.error('[SyncEngine] Failed to set last sync timestamp:', e)
     throw e
@@ -100,6 +116,7 @@ export async function clearCloudSyncSettings(): Promise<void> {
   await Preferences.remove({ key: CLOUD_SYNC_DISPLAY_NAME_KEY })
   await Preferences.remove({ key: CLOUD_SYNC_LAST_SYNC_KEY })
   await Preferences.remove({ key: CLOUD_SYNC_FILE_SIZE_KEY })
+  await Preferences.remove({ key: CLOUD_SYNC_FILE_HASH_KEY })
   await Preferences.remove({ key: CLOUD_SYNC_MODE_KEY })
 }
 
@@ -214,6 +231,29 @@ async function mobilePush(filePath: string, passphrase?: string): Promise<{ succ
   }
 }
 
+async function getCloudFileFingerprint(filePath: string): Promise<string | null> {
+  if (!isNative) return null // Desktop uses file modification time
+  try {
+    let base64: string
+    if (isContentUri(filePath)) {
+      const result = await CloudFile.readFile({ uri: filePath })
+      base64 = result.data
+    } else {
+      const result = await Filesystem.readFile({
+        path: filePath,
+        directory: Directory.Documents,
+        encoding: 'base64' as Encoding,
+      })
+      base64 = result.data as string
+    }
+    const buffer = base64ToArrayBuffer(base64)
+    return await computeFileFingerprint(buffer)
+  } catch (err) {
+    console.warn('[SyncEngine] Could not fingerprint cloud file:', err)
+    return null
+  }
+}
+
 /* ─── Unified operations ─── */
 
 export async function getCloudFileInfo(filePath: string): Promise<CloudFileInfo> {
@@ -238,19 +278,23 @@ export async function pullCloudBackup(filePath: string): Promise<{ success: bool
     : await desktopPull(filePath, passphrase)
   console.log('[SyncEngine] pullCloudBackup result:', result)
   if (result.success) {
-    await setLastSyncTimestamp(new Date().toISOString(), fileSize)
+    // Fingerprint the file we just read so future checks can detect changes even when size is unchanged.
+    const fingerprint = await getCloudFileFingerprint(filePath)
+    await setLastSyncTimestamp(new Date().toISOString(), fileSize, fingerprint || undefined)
     clearDirty()
   }
   return result
 }
 
-export async function pushCloudBackup(filePath: string): Promise<{ success: boolean; modifiedAt: string; size: number }> {
+export async function pushCloudBackup(filePath: string): Promise<{ success: boolean; modifiedAt: string; size: number; hash?: string }> {
   const passphrase = getSessionPassphrase() || undefined
   const result = isNative
     ? await mobilePush(filePath, passphrase)
     : await desktopPush(filePath, passphrase)
   if (result.success) {
-    await setLastSyncTimestamp(result.modifiedAt, result.size)
+    // Use the server-provided hash on desktop, otherwise fingerprint what we just wrote.
+    const fingerprint = (result as any).hash || (await getCloudFileFingerprint(filePath)) || undefined
+    await setLastSyncTimestamp(result.modifiedAt, result.size, fingerprint)
     clearDirty()
   }
   return result
@@ -270,7 +314,7 @@ export async function checkCloudSyncStatus(filePath: string): Promise<'newer' | 
     if (!lastSync) return 'newer'
 
     // Content URIs (SAF) do not expose reliable modification time.
-    // Fall back to file size comparison, then dirty-state heuristic.
+    // Fall back to file size comparison, then content fingerprint, then dirty-state heuristic.
     if (!info.modifiedAt) {
       const lastSizeVal = (await Preferences.get({ key: CLOUD_SYNC_FILE_SIZE_KEY })).value
       const lastSize = lastSizeVal ? parseInt(lastSizeVal, 10) : null
@@ -279,6 +323,15 @@ export async function checkCloudSyncStatus(filePath: string): Promise<'newer' | 
         console.log('[syncEngine] Content URI size changed:', lastSize, '->', currentSize)
         return 'newer'
       }
+
+      // If size is unchanged (or unknown), compare a SHA-256 fingerprint of the file content.
+      const lastHash = await getStoredFileFingerprint()
+      const currentHash = await getCloudFileFingerprint(filePath)
+      if (lastHash && currentHash && lastHash !== currentHash) {
+        console.log('[syncEngine] Content URI fingerprint changed')
+        return 'newer'
+      }
+
       if (lastSync && !isDirty()) return 'same'
       return isDirty() ? 'older' : 'newer'
     }
@@ -334,6 +387,16 @@ export async function performSync(filePath: string): Promise<{ action: 'pulled' 
 
     // If local is dirty or cloud is older/missing, push
     if (status === 'older' || status === 'missing' || isDirty()) {
+      const result = await pushCloudBackup(filePath)
+      window.dispatchEvent(new CustomEvent('sync:pushed', { detail: result }))
+      return {
+        action: 'pushed',
+        message: `Pushed backup to cloud (${result.size} bytes).`,
+      }
+    }
+
+    if (status === 'error' && isDirty()) {
+      console.warn('[SyncEngine] performSync status error but local is dirty; attempting push')
       const result = await pushCloudBackup(filePath)
       window.dispatchEvent(new CustomEvent('sync:pushed', { detail: result }))
       return {

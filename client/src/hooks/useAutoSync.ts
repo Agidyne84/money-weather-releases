@@ -10,7 +10,7 @@ import { isDirty } from '../services/dirtyTracker'
 const POLL_INTERVAL = 15000 // 15 seconds normal
 const DIRTY_POLL_INTERVAL = 2000 // 2 seconds when local data is dirty
 const BACKGROUND_POLL_INTERVAL = 60000 // 60 seconds when tab is hidden
-const IMMEDIATE_SYNC_DEBOUNCE = 500 // 500ms debounce after a local change
+const IMMEDIATE_SYNC_DEBOUNCE = 100 // 100ms debounce after a local change
 
 /**
  * Background auto-sync hook.
@@ -54,7 +54,15 @@ export function useAutoSync(locked: boolean) {
         return
       }
 
-      const status = await checkCloudSyncStatus(settings.filePath)
+      let status: 'newer' | 'older' | 'same' | 'missing' | 'error'
+      try {
+        status = await checkCloudSyncStatus(settings.filePath)
+      } catch (err) {
+        console.error('[AutoSync] checkCloudSyncStatus failed:', err)
+        // If local is dirty, we still want to attempt a push rather than drop the change.
+        status = isDirty() ? 'older' : 'error'
+      }
+      console.log('[AutoSync] status:', status, 'dirty:', isDirty())
       if (status === 'missing') {
         console.log('[AutoSync] Cloud file missing, skipping sync')
         return
@@ -64,6 +72,8 @@ export function useAutoSync(locked: boolean) {
         const result = await performSync(settings.filePath)
         if (result.action !== 'none') {
           console.log('[AutoSync]', result.action, result.message)
+        } else {
+          console.log('[AutoSync] no action needed')
         }
       } catch (err) {
         console.error('[AutoSync] Error:', err)
