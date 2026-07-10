@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.79",
-    "versionCode":  10179,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.79/app-release.apk",
+    "version":  "1.1.80",
+    "versionCode":  10180,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.80/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Fix mobile cloud sync decryption failures: use ParcelFileDescriptor for fresh reads/writes, verify backup password before sync, add Re-enter Backup Password option, improve secure storage diagnostics, and lock after 5 minutes of foreground inactivity."
+    "releaseNotes":  "Add pull-to-refresh to any native page for manual cloud pull, use SHA-256 content fingerprinting to detect remote changes even when file size is unchanged, and strengthen immediate auto-push after local edits."
 }
