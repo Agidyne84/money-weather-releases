@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.77",
-    "versionCode":  10177,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.77/app-release.apk",
+    "version":  "1.1.78",
+    "versionCode":  10178,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.78/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Interim fix: allow force pull/manual sync by prompting for backup password when session passphrase is not available."
+    "releaseNotes":  "Implement Session Master Key for cloud sync: supports PIN and biometric unlock paths. Auto-sync pushes local changes and pulls cloud changes; uses file-size heuristic for Content URI change detection."
 }
