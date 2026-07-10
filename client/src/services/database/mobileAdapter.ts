@@ -142,8 +142,26 @@ function txToDb(tx: Partial<Transaction>): Record<string, any> {
   if (tx.pauseEndDate !== undefined) {
     data.pause_end_date = tx.pauseEndDate ? formatDateForStorage(createSafeDate(tx.pauseEndDate)) : null
   }
-  if (tx.isTransfer !== undefined) data.is_transfer = tx.isTransfer ? 1 : 0
-  if (tx.isActive !== undefined) data.is_active = tx.isActive ? 1 : 0
+  if (tx.categoryId !== undefined) {
+    data.category_id = tx.categoryId
+    delete data.categoryId
+  }
+  if (tx.accountId !== undefined) {
+    data.account_id = tx.accountId
+    delete data.accountId
+  }
+  if (tx.transferToAccountId !== undefined) {
+    data.transfer_to_account_id = tx.transferToAccountId
+    delete data.transferToAccountId
+  }
+  if (tx.isTransfer !== undefined) {
+    data.is_transfer = tx.isTransfer ? 1 : 0
+    delete data.isTransfer
+  }
+  if (tx.isActive !== undefined) {
+    data.is_active = tx.isActive ? 1 : 0
+    delete data.isActive
+  }
   return data
 }
 
