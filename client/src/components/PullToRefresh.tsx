@@ -124,11 +124,10 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, onRefresh }) =>
     <div ref={containerRef} className="relative overflow-y-auto h-full" style={{ touchAction: 'pan-y' }}>
       {/* Pull indicator */}
       <div
-        className="absolute left-0 right-0 flex flex-col items-center justify-center text-blue-600 transition-transform duration-150"
+        className="absolute left-0 right-0 flex flex-col items-center justify-center text-blue-600 transition-all duration-150"
         style={{
-          top: -60,
+          top: -60 + offset,
           height: 60,
-          transform: `translateY(${offset}px)`,
         }}
       >
         {refreshing ? (
@@ -161,7 +160,7 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, onRefresh }) =>
         </div>
       )}
 
-      <div style={{ transform: `translateY(${offset}px)` }}>{children}</div>
+      <div style={{ marginTop: offset }}>{children}</div>
     </div>
   )
 }
