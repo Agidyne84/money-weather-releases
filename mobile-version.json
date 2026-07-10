@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.76",
-    "versionCode":  10176,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.76/app-release.apk",
+    "version":  "1.1.77",
+    "versionCode":  10177,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.77/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Remove extra AppLock from cloud sync; use session passphrase unlocked during app PIN unlock. Add sync diagnostics. Fix stale-closure forecast reload after pull."
+    "releaseNotes":  "Interim fix: allow force pull/manual sync by prompting for backup password when session passphrase is not available."
 }
