@@ -26,6 +26,7 @@ const CLOUD_SYNC_ENABLED_KEY = 'cloud_sync_enabled'
 const CLOUD_SYNC_PATH_KEY = 'cloud_sync_path'
 const CLOUD_SYNC_DISPLAY_NAME_KEY = 'cloud_sync_display_name'
 const CLOUD_SYNC_LAST_SYNC_KEY = 'cloud_sync_last_sync'
+const CLOUD_SYNC_FILE_SIZE_KEY = 'cloud_sync_last_file_size'
 const CLOUD_SYNC_MODE_KEY = 'cloud_sync_mode'
 
 export type CloudSyncMode = 'auto' | 'manual'
@@ -80,10 +81,13 @@ export async function setCloudSyncMode(mode: CloudSyncMode): Promise<void> {
   await Preferences.set({ key: CLOUD_SYNC_MODE_KEY, value: mode })
 }
 
-export async function setLastSyncTimestamp(timestamp: string): Promise<void> {
+export async function setLastSyncTimestamp(timestamp: string, fileSize?: number): Promise<void> {
   try {
     await Preferences.set({ key: CLOUD_SYNC_LAST_SYNC_KEY, value: timestamp })
-    console.log('[SyncEngine] setLastSyncTimestamp:', timestamp)
+    if (typeof fileSize === 'number') {
+      await Preferences.set({ key: CLOUD_SYNC_FILE_SIZE_KEY, value: fileSize.toString() })
+    }
+    console.log('[SyncEngine] setLastSyncTimestamp:', timestamp, 'size:', fileSize)
   } catch (e) {
     console.error('[SyncEngine] Failed to set last sync timestamp:', e)
     throw e
@@ -95,6 +99,7 @@ export async function clearCloudSyncSettings(): Promise<void> {
   await Preferences.remove({ key: CLOUD_SYNC_PATH_KEY })
   await Preferences.remove({ key: CLOUD_SYNC_DISPLAY_NAME_KEY })
   await Preferences.remove({ key: CLOUD_SYNC_LAST_SYNC_KEY })
+  await Preferences.remove({ key: CLOUD_SYNC_FILE_SIZE_KEY })
   await Preferences.remove({ key: CLOUD_SYNC_MODE_KEY })
 }
 
@@ -218,12 +223,22 @@ export async function getCloudFileInfo(filePath: string): Promise<CloudFileInfo>
 export async function pullCloudBackup(filePath: string): Promise<{ success: boolean; summary: Record<string, number> }> {
   const passphrase = getSessionPassphrase() || undefined
   console.log('[SyncEngine] pullCloudBackup:', { filePath, hasPassphrase: !!passphrase, isNative })
+  // Capture the cloud file size before reading so we can track it for Content URI change detection
+  let fileSize: number | undefined
+  try {
+    const info = await getCloudFileInfo(filePath)
+    if (info.exists && typeof info.size === 'number') {
+      fileSize = info.size
+    }
+  } catch (e) {
+    console.warn('[SyncEngine] Could not get file info before pull:', e)
+  }
   const result = isNative
     ? await mobilePull(filePath, passphrase)
     : await desktopPull(filePath, passphrase)
   console.log('[SyncEngine] pullCloudBackup result:', result)
   if (result.success) {
-    await setLastSyncTimestamp(new Date().toISOString())
+    await setLastSyncTimestamp(new Date().toISOString(), fileSize)
     clearDirty()
   }
   return result
@@ -235,7 +250,7 @@ export async function pushCloudBackup(filePath: string): Promise<{ success: bool
     ? await mobilePush(filePath, passphrase)
     : await desktopPush(filePath, passphrase)
   if (result.success) {
-    await setLastSyncTimestamp(result.modifiedAt)
+    await setLastSyncTimestamp(result.modifiedAt, result.size)
     clearDirty()
   }
   return result
@@ -255,10 +270,15 @@ export async function checkCloudSyncStatus(filePath: string): Promise<'newer' | 
     if (!lastSync) return 'newer'
 
     // Content URIs (SAF) do not expose reliable modification time.
-    // Fall back to dirty-state heuristic: if local is dirty, push; otherwise pull.
+    // Fall back to file size comparison, then dirty-state heuristic.
     if (!info.modifiedAt) {
-      // Content URIs (SAF) don't expose reliable modification time.
-      // If we've synced before and nothing changed locally since, assume up to date.
+      const lastSizeVal = (await Preferences.get({ key: CLOUD_SYNC_FILE_SIZE_KEY })).value
+      const lastSize = lastSizeVal ? parseInt(lastSizeVal, 10) : null
+      const currentSize = typeof info.size === 'number' ? info.size : null
+      if (currentSize !== null && lastSize !== null && currentSize !== lastSize) {
+        console.log('[syncEngine] Content URI size changed:', lastSize, '->', currentSize)
+        return 'newer'
+      }
       if (lastSync && !isDirty()) return 'same'
       return isDirty() ? 'older' : 'newer'
     }

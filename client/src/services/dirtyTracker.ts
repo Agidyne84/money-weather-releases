@@ -5,6 +5,11 @@ let dirty = false
 
 export function markDirty(): void {
   dirty = true
+  try {
+    window.dispatchEvent(new CustomEvent('sync:dirty'))
+  } catch {
+    // ignore if window is not available (e.g. during SSR)
+  }
 }
 
 export function isDirty(): boolean {
