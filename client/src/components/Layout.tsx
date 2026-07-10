@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Capacitor } from '@capacitor/core'
 import ConnectionStatus from './ConnectionStatus'
@@ -72,8 +72,28 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null)
   const [syncConflict, setSyncConflict] = useState<{ open: boolean; filePath: string | null }>({ open: false, filePath: null })
 
+  const lockedRef = useRef(locked)
+  useEffect(() => {
+    lockedRef.current = locked
+  }, [locked])
+
   useEffect(() => {
     let backgroundedAt: number | null = null
+    let idleTimer: ReturnType<typeof setTimeout> | null = null
+    const IDLE_LOCK_MS = 5 * 60 * 1000
+
+    const lockIfEnabled = async () => {
+      const enabled = await isLockEnabled()
+      if (enabled) setLocked(true)
+    }
+
+    const resetIdleTimer = () => {
+      if (idleTimer) clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => {
+        console.log('[Layout] Idle timeout reached, locking app')
+        lockIfEnabled()
+      }, IDLE_LOCK_MS)
+    }
 
     const init = async () => {
       const complete = await isLockSetupComplete()
@@ -93,6 +113,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         // Skip all background checks while the app is locked
         return
       }
+
+      // Start the foreground idle timer now that the app is unlocked.
+      resetIdleTimer()
 
       // After lock init, check cloud sync status (only when NOT locked)
       try {
@@ -133,6 +156,15 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
 
+    // Track user activity to reset the foreground idle timer.
+    const userActivityEvents = ['pointerdown', 'keydown', 'touchstart', 'scroll']
+    const handleUserActivity = () => {
+      if (!lockedRef.current) resetIdleTimer()
+    }
+    userActivityEvents.forEach((event) => {
+      document.addEventListener(event, handleUserActivity, { passive: true })
+    })
+
     // Track background time and re-lock after 5+ minutes of inactivity (native only)
     const handleVisibilityChange = () => {
       if (!isNativePlatform()) return
@@ -146,21 +178,25 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           console.log('[Layout] Minutes in background:', elapsedMinutes)
           if (elapsedMinutes > 5) {
             console.log('[Layout] Re-locking app (5+ min in background)')
-            isLockEnabled().then((enabled) => {
-              if (enabled) setLocked(true)
-            })
+            lockIfEnabled()
           }
           backgroundedAt = null
         }
+        // Reset idle timer on resume as well.
+        if (!lockedRef.current) resetIdleTimer()
       }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
+      if (idleTimer) clearTimeout(idleTimer)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('beforeunload', handleBeforeUnload)
       window.removeEventListener('sync:conflict', handleConflict)
       window.removeEventListener('sync:pulled', handlePulled)
+      userActivityEvents.forEach((event) => {
+        document.removeEventListener(event, handleUserActivity)
+      })
     }
   }, [])
 

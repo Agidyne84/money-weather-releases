@@ -714,27 +714,78 @@ const CloudSyncSettings: React.FC = () => {
     }
   }
 
+  const handleReenterPassword = async () => {
+    if (!settings.filePath) {
+      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
+      return
+    }
+    clearSessionPassphrase()
+    try {
+      await deleteStoredPassphrase()
+    } catch (e) {
+      console.warn('[CloudSync] Could not clear stored passphrase:', e)
+    }
+    setHasPassword(false)
+    setPassword('')
+    setConfirmPassword('')
+    setSetupPin('')
+    setVerifyError(false)
+    setPasswordModalContext('sync-password')
+    setPendingAction('manual-sync')
+    setShowPasswordModal(true)
+  }
+
   const canSync = settings.enabled && !!settings.filePath && hasPassword
 
   const handleSyncPassword = async () => {
     if (!password) return
     if (!pendingAction) return
+    if (!settings.filePath) return
     setLoading(true)
     setMessage(null)
     try {
-      // Temporarily set the session passphrase to the password the user entered
-      // and attempt the sync. If the password is wrong, the pull/push will fail
-      // with a decryption error and the passphrase is cleared.
+      // First verify the password against the actual cloud file. This prevents a
+      // wrong password from overwriting the cloud backup (push) or producing a
+      // confusing decryption error during the sync itself.
+      let buffer: ArrayBuffer
+      if (isNative && settings.filePath.startsWith('content://')) {
+        const readResult = await CloudFile.readFile({ uri: settings.filePath })
+        buffer = base64ToArrayBuffer(readResult.data)
+      } else if (isNative) {
+        const result = await Filesystem.readFile({
+          path: settings.filePath,
+          directory: Directory.Documents,
+          encoding: 'base64' as any,
+        })
+        buffer = base64ToArrayBuffer(result.data as string)
+      } else {
+        const electronAPI = (window as any).electronAPI
+        const data = await electronAPI.readFile(settings.filePath)
+        const uint8 = data instanceof Uint8Array ? data : new Uint8Array(data)
+        buffer = uint8.buffer.slice(uint8.byteOffset, uint8.byteOffset + uint8.byteLength)
+      }
+
+      const ok = await verifyBackupPassword(buffer, password)
+      if (!ok) {
+        setMessage({ type: 'error', text: 'Incorrect backup password. Please enter the same password used on your other devices.' })
+        setPassword('')
+        setLoading(false)
+        return
+      }
+
+      // Password is verified — use it for this sync and persist it for future use.
       setSessionPassphrase(password)
       setShowPasswordModal(false)
       setPassword('')
       setConfirmPassword('')
       setSetupPin('')
+
       if (pendingAction === 'force-pull') {
         await runForcePull()
       } else if (pendingAction === 'manual-sync') {
         await executeManualSync()
       }
+
       // Sync succeeded — persist the passphrase using secure storage so that
       // future biometric unlocks can recover it without asking again.
       try {
@@ -945,8 +996,17 @@ const CloudSyncSettings: React.FC = () => {
             </div>
           )}
 
-          {/* Reset */}
-          <div className="flex justify-end">
+          {/* Reset / Re-enter password */}
+          <div className="flex justify-end gap-4">
+            {settings.filePath && (
+              <button
+                onClick={handleReenterPassword}
+                disabled={loading}
+                className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-50"
+              >
+                Re-enter Backup Password
+              </button>
+            )}
             <button
               onClick={handleResetCloudSync}
               disabled={loading}

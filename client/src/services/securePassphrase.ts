@@ -180,7 +180,9 @@ async function unwrapSMKWithPin(bundle: PinWrappedBundle, pin: string): Promise<
 
 async function storeSMKSecurely(smk: ArrayBuffer): Promise<void> {
   try {
-    await SecureStorage.set(SMK_SECURE_KEY, arrayBufferToBase64(smk))
+    const b64 = arrayBufferToBase64(smk)
+    await SecureStorage.set(SMK_SECURE_KEY, b64)
+    console.log('[securePassphrase] SMK stored in secure storage, length:', b64.length)
   } catch (err) {
     console.warn('[securePassphrase] Could not store SMK in secure storage:', err)
   }
@@ -189,6 +191,7 @@ async function storeSMKSecurely(smk: ArrayBuffer): Promise<void> {
 async function getSMKSecurely(): Promise<ArrayBuffer | null> {
   try {
     const value = await SecureStorage.get(SMK_SECURE_KEY)
+    console.log('[securePassphrase] SecureStorage.get result type:', typeof value, 'length:', typeof value === 'string' ? value.length : 0)
     if (value && typeof value === 'string') {
       return base64ToArrayBuffer(value)
     }
@@ -209,10 +212,12 @@ async function removeSMKSecurely(): Promise<void> {
 async function decryptPassphraseWithSMK(smkRaw: ArrayBuffer): Promise<boolean> {
   try {
     const bundleJson = (await Preferences.get({ key: PASSPHRASE_SMK_KEY })).value
+    console.log('[securePassphrase] decryptPassphraseWithSMK bundle present:', !!bundleJson)
     if (!bundleJson) return false
     const bundle: AesGcmBundle = JSON.parse(bundleJson)
     const smk = await importSMK(smkRaw)
     sessionPassphrase = await aesGcmDecrypt(bundle, smk)
+    console.log('[securePassphrase] decryptPassphraseWithSMK succeeded, passphrase length:', sessionPassphrase?.length ?? 0)
     return true
   } catch (err) {
     console.error('[securePassphrase] decryptPassphraseWithSMK failed:', err)
@@ -279,6 +284,7 @@ export async function storePassphrase(pin: string, passphrase: string): Promise<
 
   // Keep the passphrase in session memory for immediate use
   sessionPassphrase = passphrase
+  console.log('[securePassphrase] Passphrase stored with SMK (PIN-wrapped + secure store)')
 }
 
 /**
@@ -304,6 +310,7 @@ export async function storePassphraseSecurely(passphrase: string): Promise<void>
   await storeSMKSecurely(smkRaw)
 
   sessionPassphrase = passphrase
+  console.log('[securePassphrase] Passphrase stored securely (secure store only)')
 }
 
 /**
@@ -331,6 +338,9 @@ export async function unlockPassphrase(pin: string): Promise<boolean> {
     if (ok) {
       // Ensure the SMK is also in secure storage for biometric unlock path
       await storeSMKSecurely(smkRaw)
+      console.log('[securePassphrase] PIN unlock recovered passphrase')
+    } else {
+      console.warn('[securePassphrase] PIN unlock: SMK decrypted but passphrase decryption failed')
     }
     return ok
   } catch (err) {
@@ -347,8 +357,11 @@ export async function unlockPassphrase(pin: string): Promise<boolean> {
  */
 export async function unlockPassphraseFromSecureStorage(): Promise<boolean> {
   const smkRaw = await getSMKSecurely()
+  console.log('[securePassphrase] unlockPassphraseFromSecureStorage got SMK:', !!smkRaw)
   if (!smkRaw) return false
-  return decryptPassphraseWithSMK(smkRaw)
+  const ok = await decryptPassphraseWithSMK(smkRaw)
+  console.log('[securePassphrase] unlockPassphraseFromSecureStorage decrypted passphrase:', ok)
+  return ok
 }
 
 /**
