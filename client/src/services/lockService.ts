@@ -3,7 +3,7 @@
 
 import { Preferences } from '@capacitor/preferences'
 import { BiometricAuth } from '@aparajita/capacitor-biometric-auth'
-import { unlockPassphrase, clearSessionPassphrase } from './securePassphrase'
+import { unlockPassphrase, unlockPassphraseFromSecureStorage, clearSessionPassphrase } from './securePassphrase'
 
 const LOCK_ENABLED_KEY = 'app_lock_enabled'
 const LOCK_HASH_KEY = 'app_lock_password_hash'
@@ -237,6 +237,21 @@ export async function authenticateWithBiometric(): Promise<boolean> {
       10000
     )
     await markAuthenticated()
+
+    // Try to recover the cloud sync passphrase from the OS secure store.
+    // The SMK is stored there after a prior PIN unlock, so biometric-only
+    // users can still sync once the app has been unlocked with a PIN once.
+    try {
+      const ok = await unlockPassphraseFromSecureStorage()
+      if (ok) {
+        console.log('[lockService] Biometric unlock recovered cloud sync passphrase')
+      } else {
+        console.warn('[lockService] Biometric unlock could not recover cloud sync passphrase')
+      }
+    } catch (e) {
+      console.warn('[lockService] unlockPassphraseFromSecureStorage error during biometric unlock:', e)
+    }
+
     return true
   } catch {
     return false

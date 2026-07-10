@@ -1,12 +1,22 @@
 // Secure Passphrase Storage
-// The backup passphrase is encrypted with a key derived from the user's PIN.
-// It can only be decrypted when the user is actively authenticated.
+// The backup passphrase is encrypted with a random Session Master Key (SMK).
+// The SMK itself is stored in two encrypted forms:
+//   1. Encrypted with a key derived from the user's PIN (so PIN unlock can recover it).
+//   2. Stored in the OS secure store (Android Keystore / iOS Keychain) so that
+//      any successful app unlock -- PIN or biometric -- can recover it.
 // The decrypted passphrase lives only in volatile session memory.
 
 import { Preferences } from '@capacitor/preferences'
+import { SecureStorage } from '@aparajita/capacitor-secure-storage'
 
-const ENCRYPTED_PASSPHRASE_KEY = 'cloud_sync_encrypted_passphrase'
-const PASSPHRASE_SALT_KEY = 'cloud_sync_passphrase_salt'
+// Legacy PIN-encrypted passphrase (pre-SMK)
+const LEGACY_ENCRYPTED_PASSPHRASE_KEY = 'cloud_sync_encrypted_passphrase'
+const LEGACY_PASSPHRASE_SALT_KEY = 'cloud_sync_passphrase_salt'
+
+// SMK-based storage
+const SMK_PIN_KEY = 'cloud_sync_smk_pin'
+const PASSPHRASE_SMK_KEY = 'cloud_sync_passphrase_smk'
+const SMK_SECURE_KEY = 'cloud_sync_smk_secure'
 
 const PBKDF2_ITERATIONS = 100_000
 const KEY_LENGTH = 32
@@ -61,84 +71,284 @@ function hexToBuf(hex: string): Uint8Array {
   return bytes
 }
 
-/**
- * Store the backup passphrase, encrypted with the user's PIN.
- * Must be called while the user is authenticated (PIN is known).
- */
-export async function storePassphrase(pin: string, passphrase: string): Promise<void> {
-  const crypto = getCrypto()
-  const salt = crypto.getRandomValues(new Uint8Array(16))
-  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH))
-  const key = await deriveKeyFromPin(pin, salt)
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
 
-  const enc = new TextEncoder()
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes.buffer
+}
+
+async function generateSMK(): Promise<CryptoKey> {
+  const crypto = getCrypto()
+  return crypto.subtle.generateKey(
+    { name: 'AES-GCM', length: KEY_LENGTH * 8 },
+    true,
+    ['encrypt', 'decrypt']
+  )
+}
+
+async function exportSMK(key: CryptoKey): Promise<ArrayBuffer> {
+  return getCrypto().subtle.exportKey('raw', key)
+}
+
+async function importSMK(raw: ArrayBuffer): Promise<CryptoKey> {
+  return getCrypto().subtle.importKey(
+    'raw',
+    raw,
+    { name: 'AES-GCM', length: KEY_LENGTH * 8 },
+    false,
+    ['encrypt', 'decrypt']
+  )
+}
+
+interface AesGcmBundle {
+  iv: string
+  ct: string
+  tag: string
+}
+
+async function aesGcmEncrypt(plaintext: string, key: CryptoKey): Promise<AesGcmBundle> {
+  const crypto = getCrypto()
+  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH))
   const encrypted = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
     key,
-    enc.encode(passphrase)
+    new TextEncoder().encode(plaintext)
   )
-
-  // AES-GCM ciphertext includes authTag at the end in Web Crypto
   const cipherBytes = new Uint8Array(encrypted)
   const ciphertext = cipherBytes.subarray(0, cipherBytes.length - AUTH_TAG_LENGTH)
   const authTag = cipherBytes.subarray(cipherBytes.length - AUTH_TAG_LENGTH)
-
-  // Store: salt + iv + ciphertext + authTag (all hex-encoded)
-  const bundle = {
-    salt: bufToHex(salt),
+  return {
     iv: bufToHex(iv),
     ct: bufToHex(ciphertext),
     tag: bufToHex(authTag),
   }
+}
 
+async function aesGcmDecrypt(bundle: AesGcmBundle, key: CryptoKey): Promise<string> {
+  const iv = hexToBuf(bundle.iv)
+  const ciphertext = hexToBuf(bundle.ct)
+  const authTag = hexToBuf(bundle.tag)
+  const cipherWithTag = new Uint8Array(ciphertext.length + AUTH_TAG_LENGTH)
+  cipherWithTag.set(ciphertext, 0)
+  cipherWithTag.set(authTag, ciphertext.length)
+  const decrypted = await getCrypto().subtle.decrypt(
+    { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
+    key,
+    cipherWithTag.buffer.slice(cipherWithTag.byteOffset, cipherWithTag.byteOffset + cipherWithTag.byteLength) as ArrayBuffer
+  )
+  return new TextDecoder().decode(decrypted)
+}
+
+interface PinWrappedBundle {
+  salt: string
+  iv: string
+  ct: string
+  tag: string
+}
+
+async function wrapSMKWithPin(smk: ArrayBuffer, pin: string): Promise<PinWrappedBundle> {
+  const crypto = getCrypto()
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const key = await deriveKeyFromPin(pin, salt)
+  const bundle = await aesGcmEncrypt(arrayBufferToBase64(smk), key)
+  return { salt: bufToHex(salt), ...bundle }
+}
+
+async function unwrapSMKWithPin(bundle: PinWrappedBundle, pin: string): Promise<ArrayBuffer | null> {
+  try {
+    const salt = hexToBuf(bundle.salt)
+    const key = await deriveKeyFromPin(pin, salt)
+    const base64Smk = await aesGcmDecrypt(bundle, key)
+    return base64ToArrayBuffer(base64Smk)
+  } catch (err) {
+    console.error('[securePassphrase] unwrapSMKWithPin failed:', err)
+    return null
+  }
+}
+
+async function storeSMKSecurely(smk: ArrayBuffer): Promise<void> {
+  try {
+    await SecureStorage.set(SMK_SECURE_KEY, arrayBufferToBase64(smk))
+  } catch (err) {
+    console.warn('[securePassphrase] Could not store SMK in secure storage:', err)
+  }
+}
+
+async function getSMKSecurely(): Promise<ArrayBuffer | null> {
+  try {
+    const value = await SecureStorage.get(SMK_SECURE_KEY)
+    if (value && typeof value === 'string') {
+      return base64ToArrayBuffer(value)
+    }
+  } catch (err) {
+    console.warn('[securePassphrase] Could not retrieve SMK from secure storage:', err)
+  }
+  return null
+}
+
+async function removeSMKSecurely(): Promise<void> {
+  try {
+    await SecureStorage.remove(SMK_SECURE_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+async function decryptPassphraseWithSMK(smkRaw: ArrayBuffer): Promise<boolean> {
+  try {
+    const bundleJson = (await Preferences.get({ key: PASSPHRASE_SMK_KEY })).value
+    if (!bundleJson) return false
+    const bundle: AesGcmBundle = JSON.parse(bundleJson)
+    const smk = await importSMK(smkRaw)
+    sessionPassphrase = await aesGcmDecrypt(bundle, smk)
+    return true
+  } catch (err) {
+    console.error('[securePassphrase] decryptPassphraseWithSMK failed:', err)
+    sessionPassphrase = null
+    return false
+  }
+}
+
+async function migrateLegacyStorage(pin: string): Promise<boolean> {
+  try {
+    const legacyJson = (await Preferences.get({ key: LEGACY_ENCRYPTED_PASSPHRASE_KEY })).value
+    if (!legacyJson) return false
+    const legacy = JSON.parse(legacyJson)
+    const salt = hexToBuf(legacy.salt)
+    const iv = hexToBuf(legacy.iv)
+    const ciphertext = hexToBuf(legacy.ct)
+    const authTag = hexToBuf(legacy.tag)
+    const key = await deriveKeyFromPin(pin, salt)
+    const cipherWithTag = new Uint8Array(ciphertext.length + AUTH_TAG_LENGTH)
+    cipherWithTag.set(ciphertext, 0)
+    cipherWithTag.set(authTag, ciphertext.length)
+    const decrypted = await getCrypto().subtle.decrypt(
+      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
+      key,
+      cipherWithTag.buffer.slice(cipherWithTag.byteOffset, cipherWithTag.byteOffset + cipherWithTag.byteLength) as ArrayBuffer
+    )
+    const passphrase = new TextDecoder().decode(decrypted)
+    await storePassphrase(pin, passphrase)
+    // Clean up legacy storage
+    await Preferences.remove({ key: LEGACY_ENCRYPTED_PASSPHRASE_KEY })
+    await Preferences.remove({ key: LEGACY_PASSPHRASE_SALT_KEY })
+    return true
+  } catch (err) {
+    console.error('[securePassphrase] migrateLegacyStorage failed:', err)
+    return false
+  }
+}
+
+/**
+ * Store the backup passphrase using the SMK model.
+ * The passphrase is encrypted with a random SMK. The SMK is encrypted with the
+ * user's PIN and also stored in the OS secure store.
+ */
+export async function storePassphrase(pin: string, passphrase: string): Promise<void> {
+  const smk = await generateSMK()
+  const smkRaw = await exportSMK(smk)
+
+  // Encrypt the passphrase with the SMK
+  const passphraseBundle = await aesGcmEncrypt(passphrase, smk)
   await Preferences.set({
-    key: ENCRYPTED_PASSPHRASE_KEY,
-    value: JSON.stringify(bundle),
-  })
-  await Preferences.set({
-    key: PASSPHRASE_SALT_KEY,
-    value: bufToHex(salt),
+    key: PASSPHRASE_SMK_KEY,
+    value: JSON.stringify(passphraseBundle),
   })
 
-  // Keep in session memory for immediate use
+  // Encrypt the SMK with the PIN-derived key
+  const smkPinBundle = await wrapSMKWithPin(smkRaw, pin)
+  await Preferences.set({
+    key: SMK_PIN_KEY,
+    value: JSON.stringify(smkPinBundle),
+  })
+
+  // Also keep the SMK in the OS secure store so biometric unlock can use it
+  await storeSMKSecurely(smkRaw)
+
+  // Keep the passphrase in session memory for immediate use
+  sessionPassphrase = passphrase
+}
+
+/**
+ * Store the backup passphrase using the SMK model without PIN wrapping.
+ * The SMK is only stored in the OS secure store. This is used when the user
+ * has unlocked with biometric and enters the backup password directly, or when
+ * setting up sync on a device where the PIN is not available.
+ */
+export async function storePassphraseSecurely(passphrase: string): Promise<void> {
+  const smk = await generateSMK()
+  const smkRaw = await exportSMK(smk)
+
+  const passphraseBundle = await aesGcmEncrypt(passphrase, smk)
+  await Preferences.set({
+    key: PASSPHRASE_SMK_KEY,
+    value: JSON.stringify(passphraseBundle),
+  })
+
+  // Remove any PIN-wrapped SMK because the SMK has changed and the old
+  // PIN-wrapped copy would no longer decrypt the passphrase.
+  await Preferences.remove({ key: SMK_PIN_KEY })
+
+  await storeSMKSecurely(smkRaw)
+
   sessionPassphrase = passphrase
 }
 
 /**
  * Decrypt the stored passphrase using the user's PIN.
  * Returns true if decryption succeeded. The passphrase is held in session memory.
+ * Automatically migrates legacy PIN-encrypted storage if present.
  */
 export async function unlockPassphrase(pin: string): Promise<boolean> {
   try {
-    const bundleJson = (await Preferences.get({ key: ENCRYPTED_PASSPHRASE_KEY })).value
+    // Check for legacy storage and migrate
+    const hasLegacy = !!(await Preferences.get({ key: LEGACY_ENCRYPTED_PASSPHRASE_KEY })).value
+    if (hasLegacy) {
+      const migrated = await migrateLegacyStorage(pin)
+      if (migrated) return true
+    }
+
+    const bundleJson = (await Preferences.get({ key: SMK_PIN_KEY })).value
     if (!bundleJson) return false
 
-    const bundle = JSON.parse(bundleJson)
-    const salt = hexToBuf(bundle.salt)
-    const iv = hexToBuf(bundle.iv)
-    const ciphertext = hexToBuf(bundle.ct)
-    const authTag = hexToBuf(bundle.tag)
+    const bundle: PinWrappedBundle = JSON.parse(bundleJson)
+    const smkRaw = await unwrapSMKWithPin(bundle, pin)
+    if (!smkRaw) return false
 
-    const key = await deriveKeyFromPin(pin, salt)
-
-    // Reassemble ciphertext + authTag for Web Crypto decrypt
-    const cipherWithTag = new Uint8Array(ciphertext.length + AUTH_TAG_LENGTH)
-    cipherWithTag.set(ciphertext, 0)
-    cipherWithTag.set(authTag, ciphertext.length)
-
-    const decrypted = await getCrypto().subtle.decrypt(
-      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
-      key,
-      cipherWithTag.buffer.slice(cipherWithTag.byteOffset, cipherWithTag.byteOffset + cipherWithTag.byteLength) as ArrayBuffer
-    )
-
-    sessionPassphrase = new TextDecoder().decode(decrypted)
-    return true
+    const ok = await decryptPassphraseWithSMK(smkRaw)
+    if (ok) {
+      // Ensure the SMK is also in secure storage for biometric unlock path
+      await storeSMKSecurely(smkRaw)
+    }
+    return ok
   } catch (err) {
-    console.error('[securePassphrase] unlock failed:', err)
+    console.error('[securePassphrase] unlockPassphrase failed:', err)
     sessionPassphrase = null
     return false
   }
+}
+
+/**
+ * Try to recover the passphrase from the OS secure store without a PIN.
+ * This is used after biometric unlock on mobile.
+ * Returns true if the passphrase was recovered and is now in session memory.
+ */
+export async function unlockPassphraseFromSecureStorage(): Promise<boolean> {
+  const smkRaw = await getSMKSecurely()
+  if (!smkRaw) return false
+  return decryptPassphraseWithSMK(smkRaw)
 }
 
 /**
@@ -150,8 +360,8 @@ export function getSessionPassphrase(): string | null {
 }
 
 /**
- * Set the session passphrase directly (e.g. after biometric unlock
- * when the PIN is not available for persistent encryption).
+ * Set the session passphrase directly (e.g. after the user enters the backup
+ * password manually when the session passphrase is not available).
  */
 export function setSessionPassphrase(passphrase: string): void {
   sessionPassphrase = passphrase
@@ -168,15 +378,19 @@ export function clearSessionPassphrase(): void {
  * Check whether a passphrase has been stored.
  */
 export async function hasStoredPassphrase(): Promise<boolean> {
-  const val = (await Preferences.get({ key: ENCRYPTED_PASSPHRASE_KEY })).value
-  return !!val
+  const legacy = (await Preferences.get({ key: LEGACY_ENCRYPTED_PASSPHRASE_KEY })).value
+  const smk = (await Preferences.get({ key: PASSPHRASE_SMK_KEY })).value
+  return !!legacy || !!smk
 }
 
 /**
  * Remove the stored passphrase entirely.
  */
 export async function deleteStoredPassphrase(): Promise<void> {
-  await Preferences.remove({ key: ENCRYPTED_PASSPHRASE_KEY })
-  await Preferences.remove({ key: PASSPHRASE_SALT_KEY })
+  await Preferences.remove({ key: LEGACY_ENCRYPTED_PASSPHRASE_KEY })
+  await Preferences.remove({ key: LEGACY_PASSPHRASE_SALT_KEY })
+  await Preferences.remove({ key: PASSPHRASE_SMK_KEY })
+  await Preferences.remove({ key: SMK_PIN_KEY })
+  await removeSMKSecurely()
   sessionPassphrase = null
 }

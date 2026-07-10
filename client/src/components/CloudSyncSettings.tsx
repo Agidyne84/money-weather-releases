@@ -19,6 +19,7 @@ import {
 import {
   hasStoredPassphrase,
   storePassphrase,
+  storePassphraseSecurely,
   getSessionPassphrase,
   setSessionPassphrase,
   clearSessionPassphrase,
@@ -366,11 +367,12 @@ const CloudSyncSettings: React.FC = () => {
 
       const ok = await verifyBackupPassword(buffer, password)
       if (ok) {
-        // Store passphrase: encrypted with PIN if available, otherwise session-only
+        // Store passphrase: encrypted with PIN if available, otherwise in the
+        // OS secure store so biometric unlock can recover it later.
         if (pin) {
           await storePassphrase(pin, password)
         } else {
-          setSessionPassphrase(password)
+          await storePassphraseSecurely(password)
         }
         setHasPassword(true)
 
@@ -732,6 +734,14 @@ const CloudSyncSettings: React.FC = () => {
         await runForcePull()
       } else if (pendingAction === 'manual-sync') {
         await executeManualSync()
+      }
+      // Sync succeeded — persist the passphrase using secure storage so that
+      // future biometric unlocks can recover it without asking again.
+      try {
+        await storePassphraseSecurely(password)
+        console.log('[CloudSync] Stored passphrase in secure storage for biometric unlock')
+      } catch (storeErr) {
+        console.warn('[CloudSync] Could not store passphrase in secure storage:', storeErr)
       }
     } catch (err) {
       console.error('[CloudSync] sync password error:', err)
