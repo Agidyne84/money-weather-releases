@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.80",
-    "versionCode":  10180,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.80/app-release.apk",
+    "version":  "1.1.81",
+    "versionCode":  10181,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.81/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Add pull-to-refresh to any native page for manual cloud pull, use SHA-256 content fingerprinting to detect remote changes even when file size is unchanged, and strengthen immediate auto-push after local edits."
+    "releaseNotes":  "Hotfix: pull-to-refresh wrapper no longer breaks centered modal dialogs on native, so Re-enter Backup Password and other modal inputs are visible again."
 }
