@@ -63,10 +63,6 @@ export function useAutoSync(locked: boolean) {
         status = isDirty() ? 'older' : 'error'
       }
       console.log('[AutoSync] status:', status, 'dirty:', isDirty())
-      if (status === 'missing') {
-        console.log('[AutoSync] Cloud file missing, skipping sync')
-        return
-      }
 
       try {
         const result = await performSync(settings.filePath)

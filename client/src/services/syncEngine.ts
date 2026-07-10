@@ -200,20 +200,25 @@ function uint8ToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-async function mobilePush(filePath: string, passphrase?: string): Promise<{ success: boolean; modifiedAt: string; size: number }> {
+async function mobilePush(filePath: string, passphrase?: string): Promise<{ success: boolean; modifiedAt: string; size: number; hash: string }> {
   const data = await exportMobileBackup(passphrase)
   const base64 = uint8ToBase64(data)
+  const hash = await computeFileFingerprint(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer)
 
   if (isContentUri(filePath)) {
+    console.log('[SyncEngine] mobilePush writing content URI:', filePath, 'bytes:', data.length, 'hash:', hash.slice(0, 16))
     await CloudFile.writeFile({ uri: filePath, data: base64 })
+    console.log('[SyncEngine] mobilePush content URI write complete')
     return {
       success: true,
       modifiedAt: new Date().toISOString(),
       size: data.length,
+      hash,
     }
   }
 
   // Legacy path
+  console.log('[SyncEngine] mobilePush writing legacy file:', filePath, 'bytes:', data.length, 'hash:', hash.slice(0, 16))
   await Filesystem.writeFile({
     path: filePath,
     directory: Directory.Documents,
@@ -228,6 +233,7 @@ async function mobilePush(filePath: string, passphrase?: string): Promise<{ succ
     success: true,
     modifiedAt: stat.mtime ? new Date(stat.mtime).toISOString() : new Date().toISOString(),
     size: stat.size || data.length,
+    hash,
   }
 }
 
@@ -288,12 +294,15 @@ export async function pullCloudBackup(filePath: string): Promise<{ success: bool
 
 export async function pushCloudBackup(filePath: string): Promise<{ success: boolean; modifiedAt: string; size: number; hash?: string }> {
   const passphrase = getSessionPassphrase() || undefined
+  console.log('[SyncEngine] pushCloudBackup starting:', { filePath, hasPassphrase: !!passphrase, isNative })
   const result = isNative
     ? await mobilePush(filePath, passphrase)
     : await desktopPush(filePath, passphrase)
+  console.log('[SyncEngine] pushCloudBackup result:', result)
   if (result.success) {
-    // Use the server-provided hash on desktop, otherwise fingerprint what we just wrote.
-    const fingerprint = (result as any).hash || (await getCloudFileFingerprint(filePath)) || undefined
+    // Use the hash returned by the push implementation (computed from the bytes we wrote).
+    // Avoids re-reading the file, which can return stale cached content on some providers.
+    const fingerprint = (result as any).hash || undefined
     await setLastSyncTimestamp(result.modifiedAt, result.size, fingerprint)
     clearDirty()
   }

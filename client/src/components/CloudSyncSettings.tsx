@@ -52,7 +52,7 @@ const CloudSyncSettings: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [passwordModalContext, setPasswordModalContext] = useState<PasswordModalContext>('create')
-  const [pendingAction, setPendingAction] = useState<'refresh-sync' | 'force-pull' | 'manual-sync' | 'save-password' | 'verify-file' | null>(null)
+  const [pendingAction, setPendingAction] = useState<'refresh-sync' | 'force-pull' | 'force-push' | 'manual-sync' | 'save-password' | 'verify-file' | null>(null)
   const [showAppLock, setShowAppLock] = useState(false)
   const [appLockAction, setAppLockAction] = useState<'save-password' | 'verify-file' | 'unlock-sync'>('save-password')
   const [syncMode, setSyncMode] = useState<SyncMode>('pull')
@@ -696,6 +696,53 @@ const CloudSyncSettings: React.FC = () => {
     }
   }
 
+  const handleForcePush = async () => {
+    if (!settings.filePath) {
+      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
+      return
+    }
+
+    if (!getSessionPassphrase()) {
+      const hasStored = await hasStoredPassphrase()
+      if (!hasStored) {
+        setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
+        return
+      }
+      setPassword('')
+      setConfirmPassword('')
+      setSetupPin('')
+      setVerifyError(false)
+      setPasswordModalContext('sync-password')
+      setPendingAction('force-push')
+      setShowPasswordModal(true)
+      return
+    }
+
+    await runForcePush()
+  }
+
+  const runForcePush = async () => {
+    if (!settings.filePath) {
+      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
+      return
+    }
+    setLoading(true)
+    setMessage(null)
+    try {
+      console.log('[CloudSync] runForcePush starting:', settings.filePath)
+      const result = await pushCloudBackup(settings.filePath)
+      console.log('[CloudSync] runForcePush result:', result)
+      window.dispatchEvent(new CustomEvent('sync:pushed', { detail: result }))
+      setMessage({ type: 'success', text: `Force push complete. Backup uploaded (${result.size} bytes).` })
+      await loadSettings()
+    } catch (err) {
+      console.error('[CloudSync] runForcePush error:', err)
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleResetCloudSync = async () => {
     if (!confirm('Reset all cloud sync settings? This will clear the file path, password, and sync history. Your local data will not be affected.')) {
       return
@@ -782,6 +829,8 @@ const CloudSyncSettings: React.FC = () => {
 
       if (pendingAction === 'force-pull') {
         await runForcePull()
+      } else if (pendingAction === 'force-push') {
+        await runForcePush()
       } else if (pendingAction === 'manual-sync') {
         await executeManualSync()
       }
@@ -936,7 +985,7 @@ const CloudSyncSettings: React.FC = () => {
             )}
           </div>
 
-          {/* Force Pull — always available */}
+          {/* Force Pull / Force Push — always available */}
           {!fileMissing && (
             <div className="space-y-2">
               <button
@@ -946,6 +995,15 @@ const CloudSyncSettings: React.FC = () => {
                 title="Pull latest data from cloud regardless of timestamps. Use when cloud provider sync delays cause stale local file."
               >
                 {loading ? 'Syncing...' : 'Force Pull from Cloud'}
+              </button>
+
+              <button
+                onClick={handleForcePush}
+                disabled={loading}
+                className="w-full px-4 py-2 bg-amber-600 text-white text-sm rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Push local data to cloud regardless of timestamps. Use to force this device's changes to the backup."
+              >
+                {loading ? 'Syncing...' : 'Force Push to Cloud'}
               </button>
               {/* Debug timestamp display */}
               {cloudFileInfo.modifiedAt && (
