@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.82",
-    "versionCode":  10182,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.82/app-release.apk",
+    "version":  "1.1.83",
+    "versionCode":  10183,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.83/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Hotfix: fixed mobile transaction creation failing because camelCase ID fields (categoryId, accountId) were not mapped to snake_case SQLite columns."
+    "releaseNotes":  "Hotfix: added Force Push to Cloud button, fixed auto-sync skipping pushes when the cloud file is missing, and record the fingerprint from the bytes we write instead of re-reading the file (which could return stale data on some providers)."
 }
