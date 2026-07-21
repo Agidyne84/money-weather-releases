@@ -46,8 +46,13 @@ electron/client/dist/
 electron/server/
 
 # Mobile build artifacts
-client/android/
+client/android/**
+!client/android/app/
 !client/android/app/build.gradle
+!client/android/app/src/
+!client/android/app/src/main/
+!client/android/app/src/main/java/
+!client/android/app/src/main/java/**/*.java
 
 # Temp / debug files
 server/*.txt
@@ -60,7 +65,3 @@ server/database/*.js
 
 # Archived plan files
 .windsurf/plans/archive/
-
-
-
-!client/android/app/src/main/java/**/*.java

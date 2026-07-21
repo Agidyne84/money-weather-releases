@@ -201,7 +201,6 @@ export const accountsApi = {
   },
 
   create: async (account: Omit<Account, 'id' | 'createdAt' | 'updatedAt'>): Promise<Account> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     const id = generateId()
@@ -212,11 +211,11 @@ export const accountsApi = {
       [id, account.name, account.type, account.startingBalance, account.currentBalance,
        account.includeInLowBalanceAnalysis ? 1 : 0, now, now]
     )
+    markDirty()
     return { ...account as Account, id, createdAt: now, updatedAt: now }
   },
 
   update: async (id: string, account: Partial<Account>): Promise<Account> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     const sets: string[] = []
@@ -230,15 +229,16 @@ export const accountsApi = {
     vals.push(new Date().toISOString())
     vals.push(id)
     await db.run(`UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`, vals)
+    markDirty()
     const result = await db.query('SELECT * FROM accounts WHERE id = ?', [id])
     return mapAccount((result.values || [])[0])
   },
 
   delete: async (id: string): Promise<{ success: boolean }> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     await db.run('DELETE FROM accounts WHERE id = ?', [id])
+    markDirty()
     return { success: true }
   },
 }
@@ -255,7 +255,6 @@ export const categoriesApi = {
   },
 
   create: async (category: Omit<Category, 'id' | 'createdAt'>): Promise<Category> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     const id = generateId()
@@ -265,11 +264,11 @@ export const categoriesApi = {
        VALUES (?, ?, ?, ?, ?, ?)`,
       [id, category.name, category.parentId || null, category.color, category.sortOrder || 0, now]
     )
+    markDirty()
     return { ...category as Category, id, createdAt: now }
   },
 
   update: async (id: string, category: Partial<Category>): Promise<Category> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     const sets: string[] = []
@@ -280,15 +279,16 @@ export const categoriesApi = {
     if (category.sortOrder !== undefined) { sets.push('sort_order = ?'); vals.push(category.sortOrder) }
     vals.push(id)
     await db.run(`UPDATE categories SET ${sets.join(', ')} WHERE id = ?`, vals)
+    markDirty()
     const result = await db.query('SELECT * FROM categories WHERE id = ?', [id])
     return mapCategory((result.values || [])[0])
   },
 
   delete: async (id: string): Promise<{ success: boolean }> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     await db.run('DELETE FROM categories WHERE id = ?', [id])
+    markDirty()
     return { success: true }
   },
 }
@@ -307,7 +307,6 @@ export const transactionsApi = {
   },
 
   create: async (transaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>): Promise<Transaction> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     const id = generateId()
@@ -329,11 +328,11 @@ export const transactionsApi = {
         data.is_active ? 1 : 0, now, now,
       ]
     )
+    markDirty()
     return { ...(transaction as Transaction), id, createdAt: now, updatedAt: now }
   },
 
   update: async (id: string, transaction: Partial<Transaction>): Promise<Transaction> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     const data = txToDb(transaction)
@@ -358,15 +357,16 @@ export const transactionsApi = {
     vals.push(new Date().toISOString())
     vals.push(id)
     await db.run(`UPDATE transactions SET ${sets.join(', ')} WHERE id = ?`, vals)
+    markDirty()
     const result = await db.query('SELECT * FROM transactions WHERE id = ?', [id])
     return mapTransaction((result.values || [])[0])
   },
 
   delete: async (id: string): Promise<{ success: boolean }> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     await db.run('DELETE FROM transactions WHERE id = ?', [id])
+    markDirty()
     return { success: true }
   },
 }
@@ -423,7 +423,6 @@ export const historyApi = {
     isPosted?: boolean
     bankDescription?: string
   }): Promise<HistoryRow> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     const id = generateId()
@@ -441,6 +440,7 @@ export const historyApi = {
         row.isPosted !== false ? 1 : 0, row.bankDescription || null, now,
       ]
     )
+    markDirty()
     const result = await db.query(
       `SELECT h.*, a.name as account_name, c.name as category_name, c.color as category_color
        FROM historical_transactions h
@@ -466,7 +466,6 @@ export const historyApi = {
     isPosted: boolean
     isExcluded: boolean
   }>): Promise<HistoryRow> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     const sets: string[] = []
@@ -495,6 +494,7 @@ export const historyApi = {
     }
     vals.push(id)
     await db.run(`UPDATE historical_transactions SET ${sets.join(', ')} WHERE id = ?`, vals)
+    markDirty()
     const result = await db.query(
       `SELECT h.*, a.name as account_name, c.name as category_name, c.color as category_color
        FROM historical_transactions h
@@ -506,18 +506,18 @@ export const historyApi = {
   },
 
   delete: async (id: string): Promise<{ success: boolean }> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     await db.run('DELETE FROM historical_transactions WHERE id = ?', [id])
+    markDirty()
     return { success: true }
   },
 
   reset: async (): Promise<{ success: boolean; message?: string }> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     await db.run('DELETE FROM historical_transactions')
+    markDirty()
     return { success: true, message: 'All historical transactions deleted.' }
   },
 }
@@ -537,7 +537,6 @@ export const preferencesApi = {
   },
 
   set: async (key: string, value: string): Promise<{ key: string; value: string }> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     const now = new Date().toISOString()
@@ -545,6 +544,7 @@ export const preferencesApi = {
       'INSERT OR REPLACE INTO user_preferences (key, value, updated_at) VALUES (?, ?, ?)',
       [key, value, now]
     )
+    markDirty()
     return { key, value }
   },
 }
@@ -653,7 +653,6 @@ export const importApi = {
     }[]
     forecastOccurrences: { transactionId: string; date: string }[]
   }): Promise<{ success: boolean; committed: number }> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     let committed = 0
@@ -687,6 +686,7 @@ export const importApi = {
         committed++
       }
       await db.commitTransaction()
+      markDirty()
     } catch (e) {
       await db.rollbackTransaction()
       throw e
@@ -761,7 +761,6 @@ export const forecastApi = {
     accountId: string
     categoryId?: string
   }): Promise<ForecastTransaction> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     const id = generateId()
@@ -771,6 +770,7 @@ export const forecastApi = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, 'manual', adjustment.date, adjustment.amount, adjustment.amount, adjustment.description, now, now]
     )
+    markDirty()
     return {
       id,
       transactionId: 'manual',
@@ -791,17 +791,17 @@ export const forecastApi = {
   },
 
   removeManualAdjustment: async (id: string): Promise<void> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     await db.run('DELETE FROM forecast_overrides WHERE id = ?', [id])
+    markDirty()
   },
 
   resetForecast: async (): Promise<void> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     await db.run("DELETE FROM forecast_overrides WHERE transaction_id = 'manual'")
+    markDirty()
   },
 }
 
@@ -844,7 +844,6 @@ export const rulesApi = {
     pattern: string
     categoryId: string
   }): Promise<ImportRule> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     const id = generateId()
@@ -860,6 +859,7 @@ export const rulesApi = {
         rule.pattern, rule.categoryId, 1, 0, now, now,
       ]
     )
+    markDirty()
     return {
       id,
       transactionId: rule.transactionId || null,
@@ -881,7 +881,6 @@ export const rulesApi = {
     isActive: boolean
     accountIds: string[]
   }>): Promise<ImportRule> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     const sets: string[] = []
@@ -894,15 +893,16 @@ export const rulesApi = {
     vals.push(new Date().toISOString())
     vals.push(id)
     await db.run(`UPDATE transaction_rules SET ${sets.join(', ')} WHERE id = ?`, vals)
+    markDirty()
     const all = await rulesApi.getAll()
     return all.find(r => r.id === id)!
   },
 
   delete: async (id: string): Promise<{ success: boolean }> => {
-    markDirty()
     await initializeDatabase()
     const db = await getDbConnection()
     await db.run('DELETE FROM transaction_rules WHERE id = ?', [id])
+    markDirty()
     return { success: true }
   },
 

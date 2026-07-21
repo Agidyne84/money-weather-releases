@@ -154,18 +154,17 @@ async function getAllTableData(): Promise<BackupEnvelope> {
   await initializeDatabase()
   const db = await getDbConnection()
 
-  const [accounts, categories, transactions, forecastOverrides, transactionRules, historicalTransactions, userPreferences] =
-    await Promise.all([
-      db.query('SELECT * FROM accounts'),
-      db.query('SELECT * FROM categories'),
-      db.query('SELECT * FROM transactions'),
-      db.query('SELECT * FROM forecast_overrides'),
-      db.query('SELECT * FROM transaction_rules'),
-      db.query('SELECT * FROM historical_transactions'),
-      db.query('SELECT * FROM user_preferences'),
-    ])
+  // Run sequentially: some Capacitor SQLite plugin versions return stale or empty
+  // results when multiple queries are issued in parallel on the same connection.
+  const accounts = await db.query('SELECT * FROM accounts')
+  const categories = await db.query('SELECT * FROM categories')
+  const transactions = await db.query('SELECT * FROM transactions')
+  const forecastOverrides = await db.query('SELECT * FROM forecast_overrides')
+  const transactionRules = await db.query('SELECT * FROM transaction_rules')
+  const historicalTransactions = await db.query('SELECT * FROM historical_transactions')
+  const userPreferences = await db.query('SELECT * FROM user_preferences')
 
-  return {
+  const envelope = {
     version: 1,
     exportedAt: new Date().toISOString(),
     tables: {
@@ -178,6 +177,11 @@ async function getAllTableData(): Promise<BackupEnvelope> {
       user_preferences: userPreferences.values || [],
     },
   }
+
+  console.log('[MobileBackup] export row counts:', Object.fromEntries(
+    Object.entries(envelope.tables).map(([k, v]) => [k, (v as any[]).length])
+  ))
+  return envelope
 }
 
 function validateEnvelope(data: any): data is BackupEnvelope {
