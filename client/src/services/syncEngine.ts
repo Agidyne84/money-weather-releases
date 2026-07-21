@@ -205,36 +205,59 @@ async function mobilePush(filePath: string, passphrase?: string): Promise<{ succ
   const base64 = uint8ToBase64(data)
   const hash = await computeFileFingerprint(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer)
 
-  if (isContentUri(filePath)) {
-    console.log('[SyncEngine] mobilePush writing content URI:', filePath, 'bytes:', data.length, 'hash:', hash.slice(0, 16))
-    await CloudFile.writeFile({ uri: filePath, data: base64 })
-    console.log('[SyncEngine] mobilePush content URI write complete')
+  const doWrite = async (): Promise<{ success: boolean; modifiedAt: string; size: number; hash: string }> => {
+    if (isContentUri(filePath)) {
+      console.log('[SyncEngine] mobilePush writing content URI:', filePath, 'bytes:', data.length, 'hash:', hash.slice(0, 16))
+      await CloudFile.writeFile({ uri: filePath, data: base64 })
+      console.log('[SyncEngine] mobilePush content URI write complete')
+      return {
+        success: true,
+        modifiedAt: new Date().toISOString(),
+        size: data.length,
+        hash,
+      }
+    }
+
+    // Legacy path
+    console.log('[SyncEngine] mobilePush writing legacy file:', filePath, 'bytes:', data.length, 'hash:', hash.slice(0, 16))
+    await Filesystem.writeFile({
+      path: filePath,
+      directory: Directory.Documents,
+      data: base64,
+      encoding: 'base64' as Encoding,
+    })
+    const stat = await Filesystem.stat({
+      path: filePath,
+      directory: Directory.Documents,
+    })
     return {
       success: true,
-      modifiedAt: new Date().toISOString(),
-      size: data.length,
+      modifiedAt: stat.mtime ? new Date(stat.mtime).toISOString() : new Date().toISOString(),
+      size: stat.size || data.length,
       hash,
     }
   }
 
-  // Legacy path
-  console.log('[SyncEngine] mobilePush writing legacy file:', filePath, 'bytes:', data.length, 'hash:', hash.slice(0, 16))
-  await Filesystem.writeFile({
-    path: filePath,
-    directory: Directory.Documents,
-    data: base64,
-    encoding: 'base64' as Encoding,
-  })
-  const stat = await Filesystem.stat({
-    path: filePath,
-    directory: Directory.Documents,
-  })
-  return {
-    success: true,
-    modifiedAt: stat.mtime ? new Date(stat.mtime).toISOString() : new Date().toISOString(),
-    size: stat.size || data.length,
-    hash,
+  // Write and verify. Cloud-backed providers can return stale cached data or create
+  // conflict copies, so reading the file back confirms the bytes we wrote are actually there.
+  let lastError: Error | undefined
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const result = await doWrite()
+    // Give the provider a moment to flush/sync the new content before reading back.
+    await new Promise((resolve) => setTimeout(resolve, attempt * 500))
+    const readBackHash = await getCloudFileFingerprint(filePath)
+    if (readBackHash === hash) {
+      console.log('[SyncEngine] mobilePush verification passed on attempt', attempt)
+      return result
+    }
+    console.warn(
+      '[SyncEngine] mobilePush verification FAILED on attempt', attempt,
+      'expected', hash.slice(0, 16),
+      'got', readBackHash ? readBackHash.slice(0, 16) : 'null'
+    )
+    lastError = new Error(`Cloud backup verification failed (attempt ${attempt})`)
   }
+  throw lastError || new Error('Cloud backup verification failed after multiple attempts')
 }
 
 async function getCloudFileFingerprint(filePath: string): Promise<string | null> {
@@ -382,7 +405,23 @@ export async function refreshLocalPreferences(): Promise<void> {
  */
 export async function performSync(filePath: string): Promise<{ action: 'pulled' | 'pushed' | 'none' | 'error'; message: string }> {
   try {
-    const status = await checkCloudSyncStatus(filePath)
+    let status = await checkCloudSyncStatus(filePath)
+
+    // If the cloud appears newer but we have local changes, push first. Otherwise a
+    // stale/conflict cloud copy can overwrite the changes we just made.
+    if (status === 'newer' && isDirty()) {
+      console.log('[SyncEngine] Cloud appears newer but local is dirty; pushing local changes first')
+      const pushResult = await pushCloudBackup(filePath)
+      window.dispatchEvent(new CustomEvent('sync:pushed', { detail: pushResult }))
+      // Re-check status after pushing. If the cloud still has a different version, pull it.
+      status = await checkCloudSyncStatus(filePath)
+      if (status !== 'newer') {
+        return {
+          action: 'pushed',
+          message: `Pushed backup to cloud (${pushResult.size} bytes).`,
+        }
+      }
+    }
 
     if (status === 'newer') {
       const result = await pullCloudBackup(filePath)
