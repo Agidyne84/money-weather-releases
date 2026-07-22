@@ -208,9 +208,16 @@ public class CloudFilePlugin extends Plugin {
             FileOutputStream out = new FileOutputStream(pfd.getFileDescriptor());
             out.write(bytes);
             out.flush();
+            // Force the kernel to flush the bytes to the underlying storage before closing.
+            // Without this, cloud-backed providers can report a successful write while still
+            // holding the new data in a local cache that is never uploaded.
+            try {
+                out.getFD().sync();
+                Log.d(TAG, "writeFile uri=" + uriString + " bytes=" + bytes.length + " fdSync=true");
+            } catch (java.io.SyncFailedException e) {
+                Log.w(TAG, "writeFile fd.sync not supported by provider: " + e.getMessage());
+            }
             out.close();
-
-            Log.d(TAG, "writeFile uri=" + uriString + " bytes=" + bytes.length);
 
             JSObject result = new JSObject();
             result.put("success", true);

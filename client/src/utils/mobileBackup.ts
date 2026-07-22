@@ -151,6 +151,10 @@ function arrayEquals(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 async function getAllTableData(): Promise<BackupEnvelope> {
+  // Close any existing native connection and reopen it. The Capacitor SQLite plugin
+  // can keep a stale in-memory handle that does not reflect the most recent writes,
+  // so exporting on a fresh connection guarantees we read the actual on-disk state.
+  await closeDatabase()
   await initializeDatabase()
   const db = await getDbConnection()
 

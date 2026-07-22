@@ -205,11 +205,15 @@ async function mobilePush(filePath: string, passphrase?: string): Promise<{ succ
   const base64 = uint8ToBase64(data)
   const hash = await computeFileFingerprint(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer)
 
+  // Log the state of the cloud file before we touch it.
+  const beforeInfo = await getCloudFileInfo(filePath)
+  console.log('[SyncEngine] mobilePush pre-write info:', { filePath, size: beforeInfo.size, exists: beforeInfo.exists, expectedBytes: data.length, expectedHash: hash.slice(0, 16) })
+
   const doWrite = async (): Promise<{ success: boolean; modifiedAt: string; size: number; hash: string }> => {
     if (isContentUri(filePath)) {
       console.log('[SyncEngine] mobilePush writing content URI:', filePath, 'bytes:', data.length, 'hash:', hash.slice(0, 16))
-      await CloudFile.writeFile({ uri: filePath, data: base64 })
-      console.log('[SyncEngine] mobilePush content URI write complete')
+      const writeResult = await CloudFile.writeFile({ uri: filePath, data: base64 })
+      console.log('[SyncEngine] mobilePush content URI write complete, bytesWritten:', writeResult.bytesWritten)
       return {
         success: true,
         modifiedAt: new Date().toISOString(),
@@ -243,6 +247,18 @@ async function mobilePush(filePath: string, passphrase?: string): Promise<{ succ
   let lastError: Error | undefined
   for (let attempt = 1; attempt <= 3; attempt++) {
     const result = await doWrite()
+
+    // Check the file metadata immediately after the write. If the provider reports a
+    // size that does not match the bytes we just wrote, it is almost certainly serving
+    // a cached/stale copy and the write has not actually been applied.
+    const afterInfo = await getCloudFileInfo(filePath)
+    console.log('[SyncEngine] mobilePush post-write info:', { attempt, filePath, size: afterInfo.size, expected: data.length })
+    if (afterInfo.exists && afterInfo.size !== data.length) {
+      console.warn('[SyncEngine] mobilePush post-write size mismatch:', { attempt, size: afterInfo.size, expected: data.length })
+      lastError = new Error(`Cloud backup size mismatch (attempt ${attempt}): wrote ${data.length} bytes but provider reports ${afterInfo.size}`)
+      continue
+    }
+
     // Give the provider a moment to flush/sync the new content before reading back.
     await new Promise((resolve) => setTimeout(resolve, attempt * 500))
     const readBackHash = await getCloudFileFingerprint(filePath)
