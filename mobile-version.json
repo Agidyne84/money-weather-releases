@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.84",
-    "versionCode":  10184,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.84/app-release.apk",
+    "version":  "1.1.85",
+    "versionCode":  10185,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.85/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Hotfix: fixed mobile export queries running in parallel (which could return stale/empty data), moved dirty tracking to after database writes, and added post-write verification so a cloud backup is only considered successful if the bytes we wrote are readable back."
+    "releaseNotes":  "Hotfix: force a fresh native SQLite connection before mobile backup export, flush the Android file descriptor after cloud writes, and add pre/post write size checks to detect providers that cache writes without applying them."
 }
