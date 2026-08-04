@@ -151,10 +151,9 @@ function arrayEquals(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 async function getAllTableData(): Promise<BackupEnvelope> {
-  // Close any existing native connection and reopen it. The Capacitor SQLite plugin
-  // can keep a stale in-memory handle that does not reflect the most recent writes,
-  // so exporting on a fresh connection guarantees we read the actual on-disk state.
-  await closeDatabase()
+  // Use the existing open connection. Do NOT close/reopen here: closing the database
+  // while the app/UI may still be querying it causes "database budget not opened" errors
+  // and can return empty tables that then overwrite the cloud backup.
   await initializeDatabase()
   const db = await getDbConnection()
 
@@ -185,6 +184,18 @@ async function getAllTableData(): Promise<BackupEnvelope> {
   console.log('[MobileBackup] export row counts:', Object.fromEntries(
     Object.entries(envelope.tables).map(([k, v]) => [k, (v as any[]).length])
   ))
+
+  // Safety net: a valid database should always have the seeded categories. If every
+  // core table is empty, the read almost certainly failed silently due to a closed
+  // connection; do not export this and risk wiping the cloud backup.
+  if (
+    envelope.tables.categories.length === 0 &&
+    envelope.tables.accounts.length === 0 &&
+    envelope.tables.transactions.length === 0
+  ) {
+    throw new Error('Export returned empty data; the database connection appears to be closed')
+  }
+
   return envelope
 }
 

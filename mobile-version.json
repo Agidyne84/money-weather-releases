@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "1.1.85",
-    "versionCode":  10185,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.85/app-release.apk",
+    "version":  "1.1.86",
+    "versionCode":  10186,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.86/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Hotfix: force a fresh native SQLite connection before mobile backup export, flush the Android file descriptor after cloud writes, and add pre/post write size checks to detect providers that cache writes without applying them."
+    "releaseNotes":  "Hotfix: removed the database close/reopen during mobile backup export that caused 'database budget not opened' errors and empty exports; added a safety guard so an empty export cannot overwrite the cloud backup."
 }
