@@ -3,5 +3,5 @@
     "versionCode":  10186,
     "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.86/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Hotfix: removed the database close/reopen during mobile backup export that caused 'database budget not opened' errors and empty exports; added a safety guard so an empty export cannot overwrite the cloud backup."
+    "releaseNotes":  "Hotfix: removed the database close/reopen during mobile backup export that caused \u0027database budget not opened\u0027 errors and empty exports; added a safety guard so an empty export cannot overwrite the cloud backup."
 }
