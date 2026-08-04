@@ -31,11 +31,27 @@ export function addOtaListener(
   return OtaUpdate.addListener(event, callback)
 }
 
-const VERSION_URL =
+const API_VERSION_URL =
+  'https://api.github.com/repos/Agidyne84/money-weather-releases/contents/mobile-version.json?ref=master'
+const RAW_VERSION_URL =
   'https://raw.githubusercontent.com/Agidyne84/money-weather-releases/master/mobile-version.json'
 
 const SKIP_VERSION_KEY = 'ota_skip_version'
 const FETCH_TIMEOUT_MS = 15000
+
+function decodeGithubApiContent(data: any): MobileVersionInfo | null {
+  if (!data || typeof data !== 'object' || typeof data.content !== 'string') return null
+  try {
+    // GitHub base64-encodes the file; strip wrapping whitespace and the BOM that
+    // Notepad/VS Code sometimes writes, then parse the JSON envelope.
+    const cleaned = data.content.replace(/[\s\r\n]+/g, '')
+    const jsonStr = atob(cleaned).replace(/^\uFEFF/, '')
+    return JSON.parse(jsonStr) as MobileVersionInfo
+  } catch (err) {
+    console.warn('[OTA] Could not decode GitHub API content:', err)
+    return null
+  }
+}
 
 export interface MobileVersionInfo {
   version: string
@@ -55,8 +71,8 @@ async function fetchWithXHR(url: string): Promise<{ ok: boolean; status: number;
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          const parsed = JSON.parse(xhr.responseText) as MobileVersionInfo
-          resolve({ ok: true, status: xhr.status, data: parsed })
+          const parsed = parseVersionPayload(JSON.parse(xhr.responseText))
+          resolve({ ok: !!parsed, status: xhr.status, data: parsed })
         } catch {
           resolve({ ok: false, status: xhr.status, data: null })
         }
@@ -68,6 +84,32 @@ async function fetchWithXHR(url: string): Promise<{ ok: boolean; status: number;
     xhr.ontimeout = () => reject(new Error('XHR timeout'))
     xhr.send()
   })
+}
+
+function parseVersionPayload(data: unknown): MobileVersionInfo | null {
+  if (!data) return null
+  if (typeof data === 'object') {
+    const api = decodeGithubApiContent(data)
+    if (api) return api
+    if (
+      'version' in data &&
+      'versionCode' in data &&
+      'downloadUrl' in data &&
+      'force' in data &&
+      'releaseNotes' in data
+    ) {
+      return data as MobileVersionInfo
+    }
+    return null
+  }
+  if (typeof data === 'string') {
+    try {
+      return parseVersionPayload(JSON.parse(data))
+    } catch {
+      return null
+    }
+  }
+  return null
 }
 
 async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: number; data: MobileVersionInfo | null }> {
@@ -87,13 +129,9 @@ async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: num
       if (response.status < 200 || response.status >= 300) {
         return { ok: false, status: response.status, data: null }
       }
-      let parsed: MobileVersionInfo
-      if (typeof response.data === 'string') {
-        parsed = JSON.parse(response.data)
-      } else if (response.data && typeof response.data === 'object') {
-        parsed = response.data as MobileVersionInfo
-      } else {
-        console.error('[OTA] Unexpected response.data type:', typeof response.data)
+      const parsed = parseVersionPayload(response.data)
+      if (!parsed) {
+        console.error('[OTA] Could not parse CapacitorHttp response:', response.data)
         return { ok: false, status: response.status, data: null }
       }
       console.log('[OTA] Parsed:', parsed.version, parsed.versionCode)
@@ -114,7 +152,11 @@ async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: num
       if (!response.ok) {
         return { ok: false, status: response.status, data: null }
       }
-      return { ok: true, status: response.status, data: (await response.json()) as MobileVersionInfo }
+      const parsed = parseVersionPayload(await response.json())
+      if (!parsed) {
+        return { ok: false, status: response.status, data: null }
+      }
+      return { ok: true, status: response.status, data: parsed }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.warn('[OTA] Fallback fetch failed:', msg)
@@ -141,7 +183,8 @@ async function fetchVersionJson(url: string): Promise<{ ok: boolean; status: num
       if (!response.ok) {
         return { ok: false, status: response.status, data: null }
       }
-      return { ok: true, status: response.status, data: (await response.json()) as MobileVersionInfo }
+      const parsed = parseVersionPayload(await response.json())
+      return { ok: !!parsed, status: response.status, data: parsed }
     } catch (err) {
       clearTimeout(timeoutId)
       throw err
@@ -153,37 +196,45 @@ export async function getMobileVersionInfo(): Promise<{
   info: MobileVersionInfo | null
   error?: string
 }> {
-  // Primary: cache-buster to bypass GitHub raw CDN caching
-  const urlWithCache = `${VERSION_URL}?t=${Date.now()}`
-  // Fallback: plain URL (some networks/proxies block query strings)
-  const urlPlain = VERSION_URL
+  // Primary: GitHub Contents API (JSON, not served from raw CDN, so no stale cache)
+  const apiUrl = API_VERSION_URL
+  // Fallback: raw URL with cache-buster to bypass GitHub raw CDN caching
+  const rawUrlWithCache = `${RAW_VERSION_URL}?t=${Date.now()}`
+  const rawUrlPlain = RAW_VERSION_URL
 
-  // Try up to 3 times with exponential backoff
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const url = attempt === 3 ? urlPlain : urlWithCache
+  const attempts = [
+    { url: apiUrl, source: 'github-api' },
+    { url: rawUrlWithCache, source: 'raw-cache-buster' },
+    { url: rawUrlPlain, source: 'raw-plain' },
+  ]
+
+  for (let i = 0; i < attempts.length; i++) {
+    const { url, source } = attempts[i]
     try {
       const result = await fetchVersionJson(url)
       if (!result.ok) {
-        return { info: null, error: `Server returned ${result.status}` }
+        console.warn(`[OTA] ${source} returned ${result.status}`)
+        continue
       }
       if (!result.data) {
-        return { info: null, error: 'Invalid response from update server.' }
+        console.warn(`[OTA] ${source} returned no data`)
+        continue
       }
+      console.log(`[OTA] Version info fetched from ${source}:`, result.data.version)
       return { info: result.data }
     } catch (err) {
       const isAbort = err instanceof Error && err.name === 'AbortError'
       const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[OTA] Fetch attempt ${attempt} failed (${url}):`, msg)
+      console.error(`[OTA] ${source} fetch failed (${url}):`, msg)
 
-      if (attempt === 3) {
+      if (i === attempts.length - 1) {
         if (isAbort) {
           return { info: null, error: 'Request timed out. Please check your internet connection.' }
         }
         return { info: null, error: 'Unable to reach update server. Please check your internet connection.' }
       }
 
-      // Exponential backoff before retry
-      await new Promise((r) => setTimeout(r, attempt * 1000))
+      await new Promise((r) => setTimeout(r, (i + 1) * 1000))
     }
   }
 
