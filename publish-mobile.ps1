@@ -58,7 +58,31 @@ function Get-GithubReleaseByTag {
     param([string]$Tag)
     $uri = "https://api.github.com/repos/$RepoOwner/$RepoName/releases/tags/$Tag"
     $headers = @{ Authorization = "Bearer $Token"; Accept = 'application/vnd.github+json' }
-    $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method GET
+    try {
+        $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method GET
+        return $response
+    } catch {
+        if ($_.Exception.Response.StatusCode.value__ -eq 404) { return $null }
+        throw
+    }
+}
+
+function New-GithubRelease {
+    param([string]$Tag, [string]$Name)
+    # make_latest is intentionally "false": mobile-only releases must never become the
+    # GitHub "latest" release, or electron-updater (desktop) will try to fetch latest.yml
+    # from this release, find it missing, and report update-check errors.
+    $uri = "https://api.github.com/repos/$RepoOwner/$RepoName/releases"
+    $headers = @{ Authorization = "Bearer $Token"; Accept = 'application/vnd.github+json' }
+    $body = @{
+        tag_name = $Tag
+        target_commitish = 'master'
+        name = $Name
+        draft = $false
+        prerelease = $false
+        make_latest = 'false'
+    } | ConvertTo-Json
+    $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method POST -Body $body -ContentType 'application/json'
     return $response
 }
 
@@ -202,6 +226,10 @@ else {
 # ── Get release info ───────────────────────────────────────────────────────
 Write-Host "`nFetching GitHub release $tag..." -ForegroundColor Cyan
 $release = Get-GithubReleaseByTag -Tag $tag
+if (-not $release) {
+    Write-Host "Release $tag not found. Creating it (make_latest=false)..." -ForegroundColor Yellow
+    $release = New-GithubRelease -Tag $tag -Name "Money Weather $tag (mobile)"
+}
 Write-Host "Release found: $($release.html_url)" -ForegroundColor Green
 Write-Host "Upload URL: $($release.upload_url)" -ForegroundColor DarkGray
 
@@ -236,7 +264,10 @@ $mobileVersion.versionCode  = $versionCode
 $mobileVersion.downloadUrl  = $uploaded.browser_download_url
 $mobileVersion.releaseNotes = $mobileVersion.releaseNotes
 
-$mobileVersion | ConvertTo-Json -Depth 3 | Set-Content $mobileVersionPath -Encoding UTF8
+# Write without a BOM: a leading byte-order-mark breaks JSON.parse on the mobile
+# client (CapacitorHttp/XHR do not strip it the way browser fetch() does).
+$jsonText = $mobileVersion | ConvertTo-Json -Depth 3
+[System.IO.File]::WriteAllText((Resolve-Path $mobileVersionPath), $jsonText, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "mobile-version.json updated." -ForegroundColor Green
 
 # ── Git commit and push ──────────────────────────────────────────────────────

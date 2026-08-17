@@ -39,13 +39,30 @@ const RAW_VERSION_URL =
 const SKIP_VERSION_KEY = 'ota_skip_version'
 const FETCH_TIMEOUT_MS = 15000
 
+function stripBom(text: string): string {
+  // Handles both the real BOM character (\uFEFF, when decoding already went through
+  // a UTF-8-aware path) and the raw byte sequence (\u00EF\u00BB\u00BF, when the bytes
+  // were decoded naively one-byte-per-char e.g. via atob()).
+  return text.replace(/^\uFEFF/, '').replace(/^\u00EF\u00BB\u00BF/, '')
+}
+
+function base64ToUtf8(base64: string): string {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return new TextDecoder('utf-8').decode(bytes)
+}
+
 function decodeGithubApiContent(data: any): MobileVersionInfo | null {
   if (!data || typeof data !== 'object' || typeof data.content !== 'string') return null
   try {
-    // GitHub base64-encodes the file; strip wrapping whitespace and the BOM that
-    // Notepad/VS Code sometimes writes, then parse the JSON envelope.
+    // GitHub base64-encodes the file; strip wrapping whitespace, decode as UTF-8
+    // (not just atob, which mangles multi-byte sequences like the BOM), then strip
+    // any leading BOM before parsing the JSON envelope.
     const cleaned = data.content.replace(/[\s\r\n]+/g, '')
-    const jsonStr = atob(cleaned).replace(/^\uFEFF/, '')
+    const jsonStr = stripBom(base64ToUtf8(cleaned))
     return JSON.parse(jsonStr) as MobileVersionInfo
   } catch (err) {
     console.warn('[OTA] Could not decode GitHub API content:', err)
@@ -71,7 +88,7 @@ async function fetchWithXHR(url: string): Promise<{ ok: boolean; status: number;
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          const parsed = parseVersionPayload(JSON.parse(xhr.responseText))
+          const parsed = parseVersionPayload(JSON.parse(stripBom(xhr.responseText)))
           resolve({ ok: !!parsed, status: xhr.status, data: parsed })
         } catch {
           resolve({ ok: false, status: xhr.status, data: null })
@@ -104,7 +121,7 @@ function parseVersionPayload(data: unknown): MobileVersionInfo | null {
   }
   if (typeof data === 'string') {
     try {
-      return parseVersionPayload(JSON.parse(data))
+      return parseVersionPayload(JSON.parse(stripBom(data)))
     } catch {
       return null
     }
