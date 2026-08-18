@@ -24,6 +24,18 @@ export interface CloudFileWriteOptions {
 export interface CloudFileWriteResult {
   success: boolean
   bytesWritten: number
+  uri?: string
+}
+
+export interface CloudFolderPickResult {
+  uri: string
+}
+
+export interface CloudFolderWriteOptions {
+  treeUri: string
+  fileName: string
+  data: string // base64
+  mimeType?: string
 }
 
 export interface CloudFilePlugin {
@@ -31,6 +43,10 @@ export interface CloudFilePlugin {
   getFileInfo(options: { uri: string }): Promise<CloudFileInfoResult>
   readFile(options: { uri: string }): Promise<CloudFileReadResult>
   writeFile(options: CloudFileWriteOptions): Promise<CloudFileWriteResult>
+  pickFolder(): Promise<CloudFolderPickResult>
+  getFileInfoInFolder(options: { treeUri: string; fileName: string }): Promise<CloudFileInfoResult>
+  readFileInFolder(options: { treeUri: string; fileName: string }): Promise<CloudFileReadResult>
+  writeFileInFolder(options: CloudFolderWriteOptions): Promise<CloudFileWriteResult>
 }
 
 const CloudFile = registerPlugin<CloudFilePlugin>('CloudFile', {
@@ -48,6 +64,18 @@ const CloudFile = registerPlugin<CloudFilePlugin>('CloudFile', {
       },
       writeFile: async () => {
         throw new Error('CloudFile.writeFile is not supported on web')
+      },
+      pickFolder: async () => {
+        throw new Error('CloudFile.pickFolder is not supported on web')
+      },
+      getFileInfoInFolder: async () => {
+        throw new Error('CloudFile.getFileInfoInFolder is not supported on web')
+      },
+      readFileInFolder: async () => {
+        throw new Error('CloudFile.readFileInFolder is not supported on web')
+      },
+      writeFileInFolder: async () => {
+        throw new Error('CloudFile.writeFileInFolder is not supported on web')
       },
     }
   },

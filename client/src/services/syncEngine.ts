@@ -141,9 +141,52 @@ function isContentUri(path: string): boolean {
   return path.startsWith('content://')
 }
 
+/* ─── Folder-tree file references ───
+ * Some cloud providers (notably OneDrive's Android SAF document provider) do not
+ * correctly overwrite a document in place; writing with "wt" (truncate) can leave
+ * behind a separate conflicting copy instead of updating the original. To work
+ * around this we let the user pick a *folder* (ACTION_OPEN_DOCUMENT_TREE) instead of
+ * a single document, and resolve the backup file by name inside that folder on every
+ * read/write. Writes delete the existing child document and create a fresh one, which
+ * OneDrive handles correctly. The folder + filename pair is encoded into the stored
+ * filePath string using the prefix below so the rest of the app can keep treating
+ * filePath as an opaque string. */
+const TREE_FILE_PREFIX = 'treefile:'
+
+export interface TreeFileRef {
+  treeUri: string
+  fileName: string
+}
+
+export function encodeTreeFileRef(ref: TreeFileRef): string {
+  return TREE_FILE_PREFIX + encodeURIComponent(JSON.stringify(ref))
+}
+
+function isTreeFilePath(path: string): boolean {
+  return path.startsWith(TREE_FILE_PREFIX)
+}
+
+function decodeTreeFileRef(path: string): TreeFileRef {
+  return JSON.parse(decodeURIComponent(path.slice(TREE_FILE_PREFIX.length)))
+}
+
 /* ─── Mobile helpers ─── */
 
 async function mobileFileInfo(filePath: string): Promise<CloudFileInfo> {
+  if (isTreeFilePath(filePath)) {
+    const ref = decodeTreeFileRef(filePath)
+    try {
+      const info = await CloudFile.getFileInfoInFolder({ treeUri: ref.treeUri, fileName: ref.fileName })
+      return {
+        exists: info.exists,
+        modifiedAt: info.modifiedAt,
+        size: info.size >= 0 ? info.size : undefined,
+      }
+    } catch {
+      return { exists: false, modifiedAt: null }
+    }
+  }
+
   if (isContentUri(filePath)) {
     try {
       const info = await CloudFile.getFileInfo({ uri: filePath })
@@ -176,7 +219,11 @@ async function mobileFileInfo(filePath: string): Promise<CloudFileInfo> {
 async function mobilePull(filePath: string, passphrase?: string): Promise<{ success: boolean; summary: Record<string, number> }> {
   let base64: string
 
-  if (isContentUri(filePath)) {
+  if (isTreeFilePath(filePath)) {
+    const ref = decodeTreeFileRef(filePath)
+    const result = await CloudFile.readFileInFolder({ treeUri: ref.treeUri, fileName: ref.fileName })
+    base64 = result.data
+  } else if (isContentUri(filePath)) {
     const result = await CloudFile.readFile({ uri: filePath })
     base64 = result.data
   } else {
@@ -210,6 +257,24 @@ async function mobilePush(filePath: string, passphrase?: string): Promise<{ succ
   console.log('[SyncEngine] mobilePush pre-write info:', { filePath, size: beforeInfo.size, exists: beforeInfo.exists, expectedBytes: data.length, expectedHash: hash.slice(0, 16) })
 
   const doWrite = async (): Promise<{ success: boolean; modifiedAt: string; size: number; hash: string }> => {
+    if (isTreeFilePath(filePath)) {
+      const ref = decodeTreeFileRef(filePath)
+      console.log('[SyncEngine] mobilePush writing tree file:', ref.fileName, 'in folder:', ref.treeUri, 'bytes:', data.length, 'hash:', hash.slice(0, 16))
+      const writeResult = await CloudFile.writeFileInFolder({
+        treeUri: ref.treeUri,
+        fileName: ref.fileName,
+        data: base64,
+        mimeType: 'application/octet-stream',
+      })
+      console.log('[SyncEngine] mobilePush tree file write complete, bytesWritten:', writeResult.bytesWritten, 'newUri:', writeResult.uri)
+      return {
+        success: true,
+        modifiedAt: new Date().toISOString(),
+        size: data.length,
+        hash,
+      }
+    }
+
     if (isContentUri(filePath)) {
       console.log('[SyncEngine] mobilePush writing content URI:', filePath, 'bytes:', data.length, 'hash:', hash.slice(0, 16))
       const writeResult = await CloudFile.writeFile({ uri: filePath, data: base64 })
@@ -278,7 +343,11 @@ async function getCloudFileFingerprint(filePath: string): Promise<string | null>
   if (!isNative) return null // Desktop uses file modification time
   try {
     let base64: string
-    if (isContentUri(filePath)) {
+    if (isTreeFilePath(filePath)) {
+      const ref = decodeTreeFileRef(filePath)
+      const result = await CloudFile.readFileInFolder({ treeUri: ref.treeUri, fileName: ref.fileName })
+      base64 = result.data
+    } else if (isContentUri(filePath)) {
       const result = await CloudFile.readFile({ uri: filePath })
       base64 = result.data
     } else {

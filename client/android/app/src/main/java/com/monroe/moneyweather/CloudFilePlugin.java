@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
+import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.system.Os;
 import android.system.StructStat;
@@ -71,6 +72,235 @@ public class CloudFilePlugin extends Plugin {
         intent.putExtra(Intent.EXTRA_LOCAL_ONLY, false);
 
         startActivityForResult(call, intent, "pickFileResult");
+    }
+
+    @ActivityCallback
+    private void pickFolderResult(PluginCall call, ActivityResult result) {
+        if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
+            Uri uri = result.getData().getData();
+            if (uri != null) {
+                int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION;
+                try {
+                    getContext().getContentResolver().takePersistableUriPermission(uri, takeFlags);
+                } catch (SecurityException e) {
+                    Log.w(TAG, "Could not take persistable permission for folder: " + e.getMessage());
+                }
+
+                JSObject jsResult = new JSObject();
+                jsResult.put("uri", uri.toString());
+                call.resolve(jsResult);
+            } else {
+                call.reject("No folder selected");
+            }
+        } else {
+            call.reject("User cancelled");
+        }
+    }
+
+    @PluginMethod
+    public void pickFolder(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("Activity is null");
+            return;
+        }
+
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.putExtra(Intent.EXTRA_LOCAL_ONLY, false);
+
+        startActivityForResult(call, intent, "pickFolderResult");
+    }
+
+    // Locate a child document within a picked folder tree by its display name.
+    // Returns null if no matching child exists.
+    private Uri findChildDocumentUri(Uri treeUri, String fileName) {
+        ContentResolver resolver = getContext().getContentResolver();
+        String parentDocumentId = DocumentsContract.getTreeDocumentId(treeUri);
+        Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocumentId);
+
+        try (Cursor cursor = resolver.query(
+                childrenUri,
+                new String[]{DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME},
+                null, null, null)) {
+            if (cursor != null) {
+                while (cursor.moveToNext()) {
+                    String displayName = cursor.getString(1);
+                    if (fileName.equals(displayName)) {
+                        String docId = cursor.getString(0);
+                        return DocumentsContract.buildDocumentUriUsingTree(treeUri, docId);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "findChildDocumentUri failed: " + e.getMessage());
+        }
+        return null;
+    }
+
+    @PluginMethod
+    public void getFileInfoInFolder(PluginCall call) {
+        String treeUriString = call.getString("treeUri");
+        String fileName = call.getString("fileName");
+        if (treeUriString == null || treeUriString.isEmpty() || fileName == null || fileName.isEmpty()) {
+            call.reject("treeUri and fileName are required");
+            return;
+        }
+
+        Uri treeUri = Uri.parse(treeUriString);
+        JSObject result = new JSObject();
+        try {
+            Uri docUri = findChildDocumentUri(treeUri, fileName);
+            if (docUri == null) {
+                result.put("exists", false);
+                result.put("name", (String) null);
+                result.put("size", -1);
+                result.put("modifiedAt", (String) null);
+                call.resolve(result);
+                return;
+            }
+
+            ContentResolver resolver = getContext().getContentResolver();
+            long size = -1;
+            try (ParcelFileDescriptor pfd = resolver.openFileDescriptor(docUri, "r")) {
+                if (pfd != null) {
+                    StructStat stat = Os.fstat(pfd.getFileDescriptor());
+                    if (stat != null) size = stat.st_size;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "fstat failed for folder child: " + e.getMessage());
+            }
+
+            result.put("exists", true);
+            result.put("name", fileName);
+            result.put("size", size);
+            result.put("modifiedAt", (String) null);
+            call.resolve(result);
+        } catch (Exception e) {
+            Log.e(TAG, "Error reading folder file info: " + e.getMessage(), e);
+            call.reject("Error reading file info: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void readFileInFolder(PluginCall call) {
+        String treeUriString = call.getString("treeUri");
+        String fileName = call.getString("fileName");
+        if (treeUriString == null || treeUriString.isEmpty() || fileName == null || fileName.isEmpty()) {
+            call.reject("treeUri and fileName are required");
+            return;
+        }
+
+        Uri treeUri = Uri.parse(treeUriString);
+        Uri docUri = findChildDocumentUri(treeUri, fileName);
+        if (docUri == null) {
+            call.reject("File not found in folder: " + fileName);
+            return;
+        }
+
+        ContentResolver resolver = getContext().getContentResolver();
+        try (ParcelFileDescriptor pfd = resolver.openFileDescriptor(docUri, "r")) {
+            if (pfd == null) {
+                call.reject("Could not open file descriptor for folder file");
+                return;
+            }
+
+            FileInputStream in = new FileInputStream(pfd.getFileDescriptor());
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] tmp = new byte[8192];
+            int read;
+            while ((read = in.read(tmp)) != -1) {
+                buffer.write(tmp, 0, read);
+            }
+            in.close();
+
+            byte[] bytes = buffer.toByteArray();
+            String base64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
+            Log.d(TAG, "readFileInFolder fileName=" + fileName + " bytes=" + bytes.length);
+
+            JSObject result = new JSObject();
+            result.put("data", base64);
+            call.resolve(result);
+        } catch (SecurityException e) {
+            Log.e(TAG, "Permission denied reading folder file: " + fileName, e);
+            call.reject("Permission denied: " + e.getMessage());
+        } catch (IOException e) {
+            Log.e(TAG, "IO error reading folder file: " + fileName, e);
+            call.reject("IO error: " + e.getMessage());
+        }
+    }
+
+    // Delete + recreate strategy: some cloud providers (notably OneDrive's SAF
+    // DocumentsProvider) do not correctly overwrite a document in-place when
+    // opened with "wt" (truncate). Instead of uploading the new content over the
+    // existing file, they can create a separate conflicting copy. To avoid this,
+    // we delete the existing child document (if any) and create a brand new one
+    // with the same display name before writing to it.
+    @PluginMethod
+    public void writeFileInFolder(PluginCall call) {
+        String treeUriString = call.getString("treeUri");
+        String fileName = call.getString("fileName");
+        String data = call.getString("data");
+        String mimeType = call.getString("mimeType", "application/octet-stream");
+        if (treeUriString == null || treeUriString.isEmpty() || fileName == null || fileName.isEmpty()) {
+            call.reject("treeUri and fileName are required");
+            return;
+        }
+        if (data == null) {
+            call.reject("data is required");
+            return;
+        }
+
+        Uri treeUri = Uri.parse(treeUriString);
+        ContentResolver resolver = getContext().getContentResolver();
+
+        try {
+            Uri existing = findChildDocumentUri(treeUri, fileName);
+            if (existing != null) {
+                try {
+                    boolean deleted = DocumentsContract.deleteDocument(resolver, existing);
+                    Log.d(TAG, "writeFileInFolder deleted existing document: " + deleted);
+                } catch (Exception e) {
+                    Log.w(TAG, "writeFileInFolder could not delete existing document: " + e.getMessage());
+                }
+            }
+
+            Uri newDocUri = DocumentsContract.createDocument(resolver, treeUri, mimeType, fileName);
+            if (newDocUri == null) {
+                call.reject("Could not create new document in folder");
+                return;
+            }
+
+            byte[] bytes = Base64.decode(data, Base64.NO_WRAP);
+            try (ParcelFileDescriptor pfd = resolver.openFileDescriptor(newDocUri, "w")) {
+                if (pfd == null) {
+                    call.reject("Could not open file descriptor for new document");
+                    return;
+                }
+                FileOutputStream out = new FileOutputStream(pfd.getFileDescriptor());
+                out.write(bytes);
+                out.flush();
+                try {
+                    out.getFD().sync();
+                    Log.d(TAG, "writeFileInFolder fileName=" + fileName + " bytes=" + bytes.length + " fdSync=true");
+                } catch (java.io.SyncFailedException e) {
+                    Log.w(TAG, "writeFileInFolder fd.sync not supported: " + e.getMessage());
+                }
+                out.close();
+            }
+
+            JSObject result = new JSObject();
+            result.put("success", true);
+            result.put("bytesWritten", bytes.length);
+            result.put("uri", newDocUri.toString());
+            call.resolve(result);
+        } catch (SecurityException e) {
+            Log.e(TAG, "Permission denied writing folder file: " + fileName, e);
+            call.reject("Permission denied: " + e.getMessage());
+        } catch (Exception e) {
+            Log.e(TAG, "Error writing folder file: " + fileName, e);
+            call.reject("Error writing file: " + e.getMessage());
+        }
     }
 
     @PluginMethod

@@ -14,6 +14,7 @@ import {
   pullCloudBackup,
   pushCloudBackup,
   refreshLocalPreferences,
+  encodeTreeFileRef,
   type CloudSyncMode,
 } from '../services/syncEngine'
 import {
@@ -31,6 +32,8 @@ import CloudFile from '../plugins/CloudFilePlugin'
 import AppLock from './AppLock'
 
 const isNative = Capacitor.isNativePlatform()
+const BACKUP_FILE_NAME = 'cloud-backup.budgetbackup'
+const isTreePath = (path: string): boolean => path.startsWith('treefile:')
 
 type PasswordModalContext = 'create' | 'verify-existing' | 'create-new' | 'sync-password'
 type SyncMode = 'push' | 'pull'
@@ -71,6 +74,9 @@ const CloudSyncSettings: React.FC = () => {
 
   const displayFilePath = (path: string | null, displayName?: string | null) => {
     if (!path) return 'Not set'
+    if (isTreePath(path)) {
+      return displayName || BACKUP_FILE_NAME
+    }
     if (path.startsWith('content://')) {
       // Prefer stored display name from picker (actual filename, not URI path)
       if (displayName) return displayName
@@ -89,11 +95,6 @@ const CloudSyncSettings: React.FC = () => {
     return path
   }
 
-  // Mobile folder browser for Create New
-  const [showFolderBrowser, setShowFolderBrowser] = useState(false)
-  const [folderBrowserPath, setFolderBrowserPath] = useState('')
-  const [folderBrowserItems, setFolderBrowserItems] = useState<{ name: string; type: 'directory' | 'file' }[]>([])
-  const [folderBrowserLoading, setFolderBrowserLoading] = useState(false)
 
   const loadSettings = useCallback(async () => {
     const s = await getCloudSyncSettings()
@@ -236,7 +237,9 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Mobile: use CloudFilePlugin (SAF) to pick a persistent content:// URI
+    // Mobile: pick a folder (not a single document) so pushes can delete+recreate
+    // the backup file inside it. This avoids providers like OneDrive creating
+    // conflicting duplicate files when a document is overwritten in place.
     setLoading(true)
     setMessage(null)
     try {
@@ -247,23 +250,31 @@ const CloudSyncSettings: React.FC = () => {
         value: JSON.stringify({ uri: '', warning: '', stage: 'picking' }),
       })
 
-      const pick = await CloudFile.pickFile({ mimeType: '*/*' })
-      console.log('[CloudSync] pickFile result:', pick.uri, pick.name)
+      const pick = await CloudFile.pickFolder()
+      console.log('[CloudSync] pickFolder result:', pick.uri)
 
-      // Picker succeeded — store the real URI and show the password modal
-      const fileName = (pick.name || pick.uri || '').toString()
-      const hasBackupExt = fileName.toLowerCase().endsWith('.budgetbackup')
-      const warning = hasBackupExt ? null : `This file does not have a .budgetbackup extension (${fileName}). Make sure it is a valid backup.`
-      setFileWarning(warning)
+      const fileName = BACKUP_FILE_NAME
+      const info = await CloudFile.getFileInfoInFolder({ treeUri: pick.uri, fileName })
+      if (!info.exists) {
+        await Preferences.remove({ key: 'cloud_sync_pending_verify' })
+        setMessage({
+          type: 'error',
+          text: `No "${fileName}" backup file was found in that folder. Use "Create New" to set up a new backup there instead.`,
+        })
+        return
+      }
+
+      const treeFilePath = encodeTreeFileRef({ treeUri: pick.uri, fileName })
 
       await Preferences.set({
         key: 'cloud_sync_pending_verify',
-        value: JSON.stringify({ uri: pick.uri, warning, stage: 'verify', name: pick.name || null }),
+        value: JSON.stringify({ uri: treeFilePath, warning: null, stage: 'verify', name: fileName }),
       })
 
+      setFileWarning(null)
       setPendingFileBuffer(null)
-      setPendingFileName(pick.uri)
-      setPendingDisplayName(pick.name || null)
+      setPendingFileName(treeFilePath)
+      setPendingDisplayName(fileName)
       setPassword('')
       setConfirmPassword('')
       setSetupPin('')
@@ -320,8 +331,42 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Mobile: open folder browser to select save location within Documents
-    await openFolderBrowser()
+    // Mobile: pick a folder (SAF tree) to create the backup file inside, so pushes
+    // can use the delete+recreate strategy that avoids OneDrive duplicate files.
+    setLoading(true)
+    setMessage(null)
+    try {
+      const pick = await CloudFile.pickFolder()
+      console.log('[CloudSync] pickFolder (create new) result:', pick.uri)
+
+      const fileName = BACKUP_FILE_NAME
+      const info = await CloudFile.getFileInfoInFolder({ treeUri: pick.uri, fileName })
+      if (info.exists) {
+        setMessage({
+          type: 'error',
+          text: `A "${fileName}" backup already exists in that folder. Use "Select Existing" to use it instead.`,
+        })
+        return
+      }
+
+      const treeFilePath = encodeTreeFileRef({ treeUri: pick.uri, fileName })
+      setPendingFileName(treeFilePath)
+      setPendingDisplayName(fileName)
+      setPasswordModalContext('create-new')
+      setPassword('')
+      setConfirmPassword('')
+      setSetupPin('')
+      setVerifyError(false)
+      setShowPasswordModal(true)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg !== 'User cancelled') {
+        console.error('[CloudSync] Create new failed:', err)
+        setMessage({ type: 'error', text: msg })
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleVerifyFilePassword = async () => {
@@ -349,6 +394,10 @@ const CloudSyncSettings: React.FC = () => {
       let buffer: ArrayBuffer
       if (pendingFileBuffer) {
         buffer = pendingFileBuffer
+      } else if (isNative && isTreePath(pendingFileName)) {
+        const ref = JSON.parse(decodeURIComponent(pendingFileName.slice('treefile:'.length)))
+        const readResult = await CloudFile.readFileInFolder({ treeUri: ref.treeUri, fileName: ref.fileName })
+        buffer = base64ToArrayBuffer(readResult.data)
       } else if (isNative && pendingFileName.startsWith('content://')) {
         const readResult = await CloudFile.readFile({ uri: pendingFileName })
         buffer = base64ToArrayBuffer(readResult.data)
@@ -378,7 +427,7 @@ const CloudSyncSettings: React.FC = () => {
         setHasPassword(true)
 
         // Save the file path
-        if (isNative && pendingFileName.startsWith('content://')) {
+        if (isNative && (isTreePath(pendingFileName) || pendingFileName.startsWith('content://'))) {
           await setCloudSyncPath(pendingFileName)
           if (pendingDisplayName) await setCloudSyncDisplayName(pendingDisplayName)
         } else if (isNative) {
@@ -448,13 +497,13 @@ const CloudSyncSettings: React.FC = () => {
       setHasPassword(true)
 
       // Save the file path and display name
-      const displayName = pendingFileName.split(/[\\/]/).pop() || pendingFileName
-      if (isNative) {
+      const displayName = isTreePath(pendingFileName)
+        ? pendingDisplayName || BACKUP_FILE_NAME
+        : pendingFileName.split(/[\\/]/).pop() || pendingFileName
+      if (isNative && !isTreePath(pendingFileName)) {
         await ensureParentDirs(pendingFileName)
-        await setCloudSyncPath(pendingFileName)
-      } else {
-        await setCloudSyncPath(pendingFileName)
       }
+      await setCloudSyncPath(pendingFileName)
       await setCloudSyncDisplayName(displayName)
       setSettings(prev => ({ ...prev, filePath: pendingFileName, displayName }))
 
@@ -512,63 +561,6 @@ const CloudSyncSettings: React.FC = () => {
     }
   }
 
-  /* ─── Mobile Folder Browser ─── */
-  const loadFolderBrowser = async (path: string) => {
-    setFolderBrowserLoading(true)
-    try {
-      const result = await Filesystem.readdir({
-        path,
-        directory: Directory.Documents,
-      })
-      const items = result.files.map((f) => ({
-        name: f.name,
-        type: f.type === 'directory' ? ('directory' as const) : ('file' as const),
-      }))
-      // Sort: directories first, then alphabetically
-      items.sort((a, b) => {
-        if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
-        return a.name.localeCompare(b.name)
-      })
-      setFolderBrowserItems(items)
-      setFolderBrowserPath(path)
-    } catch {
-      setFolderBrowserItems([])
-      setFolderBrowserPath(path)
-    } finally {
-      setFolderBrowserLoading(false)
-    }
-  }
-
-  const openFolderBrowser = async () => {
-    setShowFolderBrowser(true)
-    setFolderBrowserPath('')
-    await loadFolderBrowser('')
-  }
-
-  const navigateIntoFolder = async (folderName: string) => {
-    const newPath = folderBrowserPath ? `${folderBrowserPath}/${folderName}` : folderName
-    await loadFolderBrowser(newPath)
-  }
-
-  const navigateUp = async () => {
-    if (!folderBrowserPath) return
-    const lastSlash = folderBrowserPath.lastIndexOf('/')
-    const parentPath = lastSlash > 0 ? folderBrowserPath.slice(0, lastSlash) : ''
-    await loadFolderBrowser(parentPath)
-  }
-
-  const selectFolderBrowserPath = () => {
-    const folderPath = folderBrowserPath ? folderBrowserPath + '/' : ''
-    const filePath = folderPath + 'cloud-backup.budgetbackup'
-    setPendingFileName(filePath)
-    setShowFolderBrowser(false)
-    setPasswordModalContext('create-new')
-    setPassword('')
-    setConfirmPassword('')
-    setSetupPin('')
-    setVerifyError(false)
-    setShowPasswordModal(true)
-  }
 
   const handleAppLockUnlockWithPin = useCallback(async (pin: string) => {
     if (!pendingAction) return
@@ -761,7 +753,11 @@ const CloudSyncSettings: React.FC = () => {
       // wrong password from overwriting the cloud backup (push) or producing a
       // confusing decryption error during the sync itself.
       let buffer: ArrayBuffer
-      if (isNative && settings.filePath.startsWith('content://')) {
+      if (isNative && isTreePath(settings.filePath)) {
+        const ref = JSON.parse(decodeURIComponent(settings.filePath.slice('treefile:'.length)))
+        const readResult = await CloudFile.readFileInFolder({ treeUri: ref.treeUri, fileName: ref.fileName })
+        buffer = base64ToArrayBuffer(readResult.data)
+      } else if (isNative && settings.filePath.startsWith('content://')) {
         const readResult = await CloudFile.readFile({ uri: settings.filePath })
         buffer = base64ToArrayBuffer(readResult.data)
       } else if (isNative) {
@@ -1153,74 +1149,6 @@ const CloudSyncSettings: React.FC = () => {
               </button>
             </div>
 
-          </div>
-        </div>
-      )}
-
-      {/* Mobile Folder Browser Modal */}
-      {showFolderBrowser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4 max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Select Folder</h3>
-              <button
-                onClick={() => setShowFolderBrowser(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="text-sm text-gray-500 truncate">
-              {folderBrowserPath ? `Documents/${folderBrowserPath}` : 'Documents'}
-            </div>
-
-            {folderBrowserPath && (
-              <button
-                onClick={navigateUp}
-                className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700"
-              >
-                <span>←</span> Back
-              </button>
-            )}
-
-            <div className="flex-1 overflow-y-auto min-h-[200px] border rounded-md divide-y">
-              {folderBrowserLoading ? (
-                <div className="p-4 text-center text-sm text-gray-500">Loading...</div>
-              ) : folderBrowserItems.length === 0 ? (
-                <div className="p-4 text-center text-sm text-gray-500">Empty folder</div>
-              ) : (
-                folderBrowserItems.map((item) => (
-                  <button
-                    key={item.name}
-                    onClick={() =>
-                      item.type === 'directory' ? navigateIntoFolder(item.name) : undefined
-                    }
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50 ${
-                      item.type === 'directory' ? 'text-blue-600' : 'text-gray-600'
-                    }`}
-                  >
-                    <span>{item.type === 'directory' ? '📁' : '📄'}</span>
-                    <span className="truncate">{item.name}</span>
-                  </button>
-                ))
-              )}
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                onClick={selectFolderBrowserPath}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
-              >
-                Save Here
-              </button>
-              <button
-                onClick={() => setShowFolderBrowser(false)}
-                className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
-              >
-                Cancel
-              </button>
-            </div>
           </div>
         </div>
       )}
