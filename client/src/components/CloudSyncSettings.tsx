@@ -24,6 +24,7 @@ import {
   setSessionPassphrase,
   clearSessionPassphrase,
   deleteStoredPassphrase,
+  unlockPassphraseFromSecureStorage,
 } from '../services/securePassphrase'
 import { verifyBackupPassword, base64ToArrayBuffer } from '../utils/mobileBackup'
 import CloudFile from '../plugins/CloudFilePlugin'
@@ -597,22 +598,11 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // If the session passphrase isn't available, ask for the backup password
-    // directly. This can happen after biometric unlock or a fresh app start.
-    if (!getSessionPassphrase()) {
-      const hasStored = await hasStoredPassphrase()
-      if (!hasStored) {
-        setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
-        return
-      }
-      setPassword('')
-      setConfirmPassword('')
-      setSetupPin('')
-      setVerifyError(false)
-      setPasswordModalContext('sync-password')
-      setPendingAction('manual-sync')
-      setShowPasswordModal(true)
-      return
+    // The app's PIN/biometric lock already gates access to the app; do not prompt
+    // again for the backup password here. If the session passphrase isn't cached
+    // (e.g. after a cold start), silently try to recover it from secure storage.
+    if (!getSessionPassphrase() && (await hasStoredPassphrase())) {
+      await unlockPassphraseFromSecureStorage()
     }
 
     await executeManualSync()
@@ -650,20 +640,8 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    if (!getSessionPassphrase()) {
-      const hasStored = await hasStoredPassphrase()
-      if (!hasStored) {
-        setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
-        return
-      }
-      setPassword('')
-      setConfirmPassword('')
-      setSetupPin('')
-      setVerifyError(false)
-      setPasswordModalContext('sync-password')
-      setPendingAction('force-pull')
-      setShowPasswordModal(true)
-      return
+    if (!getSessionPassphrase() && (await hasStoredPassphrase())) {
+      await unlockPassphraseFromSecureStorage()
     }
 
     await runForcePull()
@@ -702,20 +680,8 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    if (!getSessionPassphrase()) {
-      const hasStored = await hasStoredPassphrase()
-      if (!hasStored) {
-        setMessage({ type: 'error', text: 'Cloud sync password not found. Please set up cloud sync again.' })
-        return
-      }
-      setPassword('')
-      setConfirmPassword('')
-      setSetupPin('')
-      setVerifyError(false)
-      setPasswordModalContext('sync-password')
-      setPendingAction('force-push')
-      setShowPasswordModal(true)
-      return
+    if (!getSessionPassphrase() && (await hasStoredPassphrase())) {
+      await unlockPassphraseFromSecureStorage()
     }
 
     await runForcePush()
