@@ -141,8 +141,8 @@ const CloudSyncSettings: React.FC = () => {
       if (value) {
         try {
           const pending = JSON.parse(value)
-          if (pending.stage === 'verify') {
-            console.log('[CloudSync] Recovering verify modal for uri:', pending.uri)
+          if (pending.stage === 'verify' || pending.stage === 'create-new') {
+            console.log('[CloudSync] Recovering', pending.stage, 'modal for uri:', pending.uri)
             setPendingFileName(pending.uri || null)
             setPendingDisplayName(pending.name || null)
             setFileWarning(pending.warning || null)
@@ -150,7 +150,7 @@ const CloudSyncSettings: React.FC = () => {
             setConfirmPassword('')
             setSetupPin('')
             setVerifyError(false)
-            setPasswordModalContext('verify-existing')
+            setPasswordModalContext(pending.stage === 'create-new' ? 'create-new' : 'verify-existing')
             setShowPasswordModal(true)
           } else if (pending.stage === 'picking') {
             console.log('[CloudSync] Cleaning up stale picking marker')
@@ -237,9 +237,12 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Mobile: pick a folder (not a single document) so pushes can delete+recreate
-    // the backup file inside it. This avoids providers like OneDrive creating
-    // conflicting duplicate files when a document is overwritten in place.
+    // Mobile: pick a single document (ACTION_OPEN_DOCUMENT). This is the only
+    // picker mode supported by every cloud provider, including OneDrive — OneDrive's
+    // Android app does not implement ACTION_OPEN_DOCUMENT_TREE, so a folder picker
+    // simply never shows it as an option. Selecting a specific file also naturally
+    // supports multiple backups (e.g. one file per budget/account) since the user
+    // browses to and picks the exact file each time.
     setLoading(true)
     setMessage(null)
     try {
@@ -250,36 +253,41 @@ const CloudSyncSettings: React.FC = () => {
         value: JSON.stringify({ uri: '', warning: '', stage: 'picking' }),
       })
 
-      const pick = await CloudFile.pickFolder()
-      console.log('[CloudSync] pickFolder result:', pick.uri)
+      const pick = await CloudFile.pickFile({ mimeType: '*/*' })
+      console.log('[CloudSync] pickFile result:', pick.uri, pick.name)
 
-      const fileName = BACKUP_FILE_NAME
-      const info = await CloudFile.getFileInfoInFolder({ treeUri: pick.uri, fileName })
-      if (!info.exists) {
-        await Preferences.remove({ key: 'cloud_sync_pending_verify' })
-        setMessage({
-          type: 'error',
-          text: `No "${fileName}" backup file was found in that folder. Use "Create New" to set up a new backup there instead.`,
-        })
-        return
+      const fileName = (pick.name || pick.uri || '').toString()
+      const hasBackupExt = fileName.toLowerCase().endsWith('.budgetbackup')
+      const warning = hasBackupExt ? null : `This file does not have a .budgetbackup extension (${fileName}). Make sure it is a valid backup.`
+
+      // If the selected file is empty (0 bytes), treat this as setting up a brand
+      // new backup rather than verifying an existing one. This lets "Select
+      // Existing" double as "Create New" for providers like OneDrive that don't
+      // support any picker capable of creating a new document — the user just
+      // creates an empty placeholder file in their provider's own app first.
+      let isEmpty = false
+      try {
+        const info = await CloudFile.getFileInfo({ uri: pick.uri })
+        isEmpty = info.exists && info.size === 0
+      } catch {
+        // If we can't stat it, fall through to the normal verify-existing flow.
       }
 
-      const treeFilePath = encodeTreeFileRef({ treeUri: pick.uri, fileName })
+      setFileWarning(isEmpty ? null : warning)
 
       await Preferences.set({
         key: 'cloud_sync_pending_verify',
-        value: JSON.stringify({ uri: treeFilePath, warning: null, stage: 'verify', name: fileName }),
+        value: JSON.stringify({ uri: pick.uri, warning, stage: isEmpty ? 'create-new' : 'verify', name: pick.name || null }),
       })
 
-      setFileWarning(null)
       setPendingFileBuffer(null)
-      setPendingFileName(treeFilePath)
-      setPendingDisplayName(fileName)
+      setPendingFileName(pick.uri)
+      setPendingDisplayName(pick.name || null)
       setPassword('')
       setConfirmPassword('')
       setSetupPin('')
       setVerifyError(false)
-      setPasswordModalContext('verify-existing')
+      setPasswordModalContext(isEmpty ? 'create-new' : 'verify-existing')
       setShowPasswordModal(true)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -332,14 +340,26 @@ const CloudSyncSettings: React.FC = () => {
     }
 
     // Mobile: pick a folder (SAF tree) to create the backup file inside, so pushes
-    // can use the delete+recreate strategy that avoids OneDrive duplicate files.
+    // can use the safer write-then-swap strategy that avoids duplicate files.
+    // NOTE: this only works with providers that support ACTION_OPEN_DOCUMENT_TREE
+    // (e.g. Google Drive, local device storage). OneDrive's Android app does not
+    // support folder access at all — OneDrive users should instead create an empty
+    // placeholder file in the OneDrive app first, then use "Select Existing" here.
     setLoading(true)
     setMessage(null)
     try {
       const pick = await CloudFile.pickFolder()
       console.log('[CloudSync] pickFolder (create new) result:', pick.uri)
 
-      const fileName = BACKUP_FILE_NAME
+      const requestedName = window.prompt(
+        'Name this backup file (useful if you keep separate backups for different budgets/accounts):',
+        BACKUP_FILE_NAME
+      )
+      if (!requestedName) return
+      const fileName = requestedName.toLowerCase().endsWith('.budgetbackup')
+        ? requestedName
+        : `${requestedName}.budgetbackup`
+
       const info = await CloudFile.getFileInfoInFolder({ treeUri: pick.uri, fileName })
       if (info.exists) {
         setMessage({
@@ -497,10 +517,11 @@ const CloudSyncSettings: React.FC = () => {
       setHasPassword(true)
 
       // Save the file path and display name
-      const displayName = isTreePath(pendingFileName)
-        ? pendingDisplayName || BACKUP_FILE_NAME
-        : pendingFileName.split(/[\\/]/).pop() || pendingFileName
-      if (isNative && !isTreePath(pendingFileName)) {
+      const isCloudUri = isTreePath(pendingFileName) || pendingFileName.startsWith('content://')
+      const displayName = pendingDisplayName || (isCloudUri
+        ? BACKUP_FILE_NAME
+        : pendingFileName.split(/[\\/]/).pop() || pendingFileName)
+      if (isNative && !isCloudUri) {
         await ensureParentDirs(pendingFileName)
       }
       await setCloudSyncPath(pendingFileName)
@@ -935,6 +956,15 @@ const CloudSyncSettings: React.FC = () => {
                 Create New File
               </button>
             </div>
+
+            {isNative && (
+              <p className="text-xs text-gray-400">
+                "Select Existing File" works with any cloud app (OneDrive, Google Drive, Dropbox, etc.) — pick the
+                exact file for this budget. "Create New File" asks for a folder and only works with providers that
+                support folder access (Google Drive, local device storage). OneDrive doesn't support folder
+                access — instead, create an empty file in the OneDrive app first, then use "Select Existing File".
+              </p>
+            )}
 
             {!fileMissing && settings.filePath && fileStatus && (
               <p className="text-xs text-gray-500">Status: {fileStatus}</p>

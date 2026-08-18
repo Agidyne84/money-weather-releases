@@ -421,8 +421,8 @@ function setupAutoUpdaterHandlers() {
     if (mainWindow) mainWindow.setProgressBar(-1);
   });
 
-  // Check for updates shortly after launch
-  setTimeout(() => {
+  const runUpdateCheck = () => {
+    if (isCheckingForUpdate) return;
     isCheckingForUpdate = true;
     autoUpdater.checkForUpdates().catch((err) => {
       isCheckingForUpdate = false;
@@ -433,7 +433,17 @@ function setupAutoUpdaterHandlers() {
         console.log('[Updater] Check skipped (update server not reachable):', err.message);
       }
     });
-  }, 3000);
+  };
+
+  // Check for updates shortly after launch
+  setTimeout(runUpdateCheck, 3000);
+
+  // Also re-check periodically while the app stays open. Without this, a
+  // long-running session (app left open for days) would never notice a new
+  // release until the user quit and relaunched or used "Check for Updates"
+  // manually — the launch-time check above only fires once per session.
+  const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
+  setInterval(runUpdateCheck, UPDATE_CHECK_INTERVAL_MS);
 }
 
 // ── App lifecycle ────────────────────────────────────────────────────────────

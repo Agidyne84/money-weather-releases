@@ -230,12 +230,19 @@ public class CloudFilePlugin extends Plugin {
         }
     }
 
-    // Delete + recreate strategy: some cloud providers (notably OneDrive's SAF
+    // Write-new-then-swap strategy: some cloud providers (notably OneDrive's SAF
     // DocumentsProvider) do not correctly overwrite a document in-place when
-    // opened with "wt" (truncate). Instead of uploading the new content over the
-    // existing file, they can create a separate conflicting copy. To avoid this,
-    // we delete the existing child document (if any) and create a brand new one
-    // with the same display name before writing to it.
+    // opened with "wt" (truncate) — they can create a separate conflicting copy
+    // instead of updating the original. A naive fix of deleting the old document
+    // first and then creating a new one is unsafe: if document creation or the
+    // write fails after the delete, the backup is permanently lost with no
+    // recovery path. Instead we:
+    //   1. Create a brand new document under a temporary name and write the full
+    //      contents to it (the old document is untouched during this step).
+    //   2. Only once the write is confirmed complete do we delete the old document.
+    //   3. Rename the temporary document to the target file name.
+    // If step 3 fails, the data is still safe on disk under the temporary name
+    // (nothing is lost — the caller can find it under fileName + ".tmp-<ts>").
     @PluginMethod
     public void writeFileInFolder(PluginCall call) {
         String treeUriString = call.getString("treeUri");
@@ -253,46 +260,74 @@ public class CloudFilePlugin extends Plugin {
 
         Uri treeUri = Uri.parse(treeUriString);
         ContentResolver resolver = getContext().getContentResolver();
+        String tempName = fileName + ".tmp-" + System.currentTimeMillis();
 
+        Uri tempDocUri = null;
         try {
-            Uri existing = findChildDocumentUri(treeUri, fileName);
-            if (existing != null) {
-                try {
-                    boolean deleted = DocumentsContract.deleteDocument(resolver, existing);
-                    Log.d(TAG, "writeFileInFolder deleted existing document: " + deleted);
-                } catch (Exception e) {
-                    Log.w(TAG, "writeFileInFolder could not delete existing document: " + e.getMessage());
-                }
-            }
-
-            Uri newDocUri = DocumentsContract.createDocument(resolver, treeUri, mimeType, fileName);
-            if (newDocUri == null) {
-                call.reject("Could not create new document in folder");
+            // Step 1: create a new document under a temporary name and write to it.
+            // The existing (old) document is not touched here.
+            tempDocUri = DocumentsContract.createDocument(resolver, treeUri, mimeType, tempName);
+            if (tempDocUri == null) {
+                call.reject("Could not create temporary document in folder");
                 return;
             }
 
             byte[] bytes = Base64.decode(data, Base64.NO_WRAP);
-            try (ParcelFileDescriptor pfd = resolver.openFileDescriptor(newDocUri, "w")) {
+            try (ParcelFileDescriptor pfd = resolver.openFileDescriptor(tempDocUri, "w")) {
                 if (pfd == null) {
-                    call.reject("Could not open file descriptor for new document");
+                    call.reject("Could not open file descriptor for temporary document");
                     return;
                 }
                 FileOutputStream out = new FileOutputStream(pfd.getFileDescriptor());
+                try {
+                    out.getChannel().truncate(0);
+                } catch (IOException e) {
+                    Log.w(TAG, "writeFileInFolder explicit truncate(0) failed (continuing): " + e.getMessage());
+                }
                 out.write(bytes);
                 out.flush();
                 try {
                     out.getFD().sync();
-                    Log.d(TAG, "writeFileInFolder fileName=" + fileName + " bytes=" + bytes.length + " fdSync=true");
+                    Log.d(TAG, "writeFileInFolder wrote temp=" + tempName + " bytes=" + bytes.length + " fdSync=true");
                 } catch (java.io.SyncFailedException e) {
                     Log.w(TAG, "writeFileInFolder fd.sync not supported: " + e.getMessage());
                 }
                 out.close();
             }
 
+            // Step 2: the new content is safely written under the temp name.
+            // Only now do we remove the old document, if one exists.
+            Uri existing = findChildDocumentUri(treeUri, fileName);
+            if (existing != null) {
+                try {
+                    boolean deleted = DocumentsContract.deleteDocument(resolver, existing);
+                    Log.d(TAG, "writeFileInFolder deleted old document: " + deleted);
+                } catch (Exception e) {
+                    Log.w(TAG, "writeFileInFolder could not delete old document (continuing): " + e.getMessage());
+                }
+            }
+
+            // Step 3: rename the temp document to the target file name.
+            Uri finalUri = tempDocUri;
+            try {
+                Uri renamed = DocumentsContract.renameDocument(resolver, tempDocUri, fileName);
+                if (renamed != null) {
+                    finalUri = renamed;
+                }
+            } catch (Exception e) {
+                // Data is NOT lost: it is safely stored under tempName. Surface a
+                // clear error instead of reporting false success, so the caller
+                // (and user) knows exactly where the data currently lives.
+                Log.e(TAG, "writeFileInFolder rename to final name failed: " + e.getMessage(), e);
+                call.reject("Backup was saved but could not be renamed to \"" + fileName + "\". " +
+                        "Your data is safe under the name \"" + tempName + "\" in the same folder: " + e.getMessage());
+                return;
+            }
+
             JSObject result = new JSObject();
             result.put("success", true);
             result.put("bytesWritten", bytes.length);
-            result.put("uri", newDocUri.toString());
+            result.put("uri", finalUri.toString());
             call.resolve(result);
         } catch (SecurityException e) {
             Log.e(TAG, "Permission denied writing folder file: " + fileName, e);
@@ -436,6 +471,17 @@ public class CloudFilePlugin extends Plugin {
 
             byte[] bytes = Base64.decode(data, Base64.NO_WRAP);
             FileOutputStream out = new FileOutputStream(pfd.getFileDescriptor());
+            // Explicitly truncate via the file channel before writing. This is a documented
+            // Android SAF issue: some providers (notably OneDrive) do not reliably honor the
+            // "wt" truncate mode, leaving trailing bytes from a previously larger file, or
+            // otherwise mishandling the overwrite. An explicit channel-level truncate(0) is
+            // the confirmed workaround and is safe to call even for providers that already
+            // truncate correctly.
+            try {
+                out.getChannel().truncate(0);
+            } catch (IOException e) {
+                Log.w(TAG, "writeFile explicit truncate(0) failed (continuing): " + e.getMessage());
+            }
             out.write(bytes);
             out.flush();
             // Force the kernel to flush the bytes to the underlying storage before closing.
