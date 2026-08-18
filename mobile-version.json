@@ -1,7 +1,7 @@
 {
-    "version":  "1.1.92",
-    "versionCode":  10192,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.92/app-release.apk",
+    "version":  "1.1.93",
+    "versionCode":  10193,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.93/app-release.apk",
     "force":  false,
     "releaseNotes":  "Hotfix: use GitHub Contents API for the mobile OTA version check so the app is not blocked by raw.githubusercontent.com CDN caching, plus the v1.1.86 sync fixes."
 }
