@@ -4,7 +4,7 @@ import {
   checkCloudSyncStatus,
   performSync,
 } from '../services/syncEngine'
-import { getSessionPassphrase } from '../services/securePassphrase'
+import { getSessionPassphrase, hasStoredPassphrase } from '../services/securePassphrase'
 import { isDirty } from '../services/dirtyTracker'
 
 const POLL_INTERVAL = 15000 // 15 seconds normal
@@ -48,9 +48,12 @@ export function useAutoSync(locked: boolean) {
       const settings = await getCloudSyncSettings()
       if (!settings.enabled || settings.syncMode !== 'auto' || !settings.filePath) return
 
-      const passphrase = getSessionPassphrase()
-      if (!passphrase) {
-        console.log('[AutoSync] No session passphrase available, skipping sync')
+      // Only block on a missing passphrase if one was actually configured for this
+      // backup but hasn't been unlocked yet this session. If the user never set an
+      // encryption password (a valid, supported unencrypted sync mode), proceed —
+      // pushCloudBackup/pullCloudBackup handle an undefined passphrase gracefully.
+      if (!getSessionPassphrase() && (await hasStoredPassphrase())) {
+        console.log('[AutoSync] Backup password configured but not unlocked this session, skipping sync')
         return
       }
 

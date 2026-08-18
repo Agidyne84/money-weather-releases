@@ -187,6 +187,21 @@ export async function importDatabase(fileBuffer: Buffer, passphrase?: string): P
 
   const db = getDatabase()
 
+  // Safety net: refuse to overwrite substantially more local data with a backup that
+  // looks empty/stale/corrupt (e.g. from a partially failed push on another device).
+  const existingAccountsRow = await db.get('SELECT COUNT(*) as count FROM accounts')
+  const existingTransactionsRow = await db.get('SELECT COUNT(*) as count FROM transactions')
+  const existingAccounts = (existingAccountsRow as any)?.count || 0
+  const existingTransactions = (existingTransactionsRow as any)?.count || 0
+  const incomingAccounts = envelope.tables.accounts.length
+  const incomingTransactions = envelope.tables.transactions.length
+  if (existingAccounts > 0 && incomingAccounts === 0) {
+    throw new Error(`Refusing to import: the cloud backup has 0 accounts but this device has ${existingAccounts}. This looks like a stale or corrupted backup file — use Force Push if you intended to overwrite the cloud backup with this device's data instead.`)
+  }
+  if (existingTransactions >= 5 && incomingTransactions === 0) {
+    throw new Error(`Refusing to import: the cloud backup has 0 transactions but this device has ${existingTransactions}. This looks like a stale or corrupted backup file — use Force Push if you intended to overwrite the cloud backup with this device's data instead.`)
+  }
+
   // Full restore inside a transaction
   await db.run('BEGIN TRANSACTION')
 

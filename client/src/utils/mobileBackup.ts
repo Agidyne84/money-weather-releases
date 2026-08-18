@@ -251,6 +251,32 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
     throw new Error('Invalid backup file: schema validation failed')
   }
 
+  // Safety net: refuse to overwrite substantially more local data with a backup that
+  // looks empty/stale/corrupt. Without this, a stale or half-written cloud file (e.g.
+  // from a failed push) can silently wipe all local data on the next pull.
+  try {
+    await initializeDatabase()
+    const existingDb = await getDbConnection()
+    const acctCountResult = await existingDb.query('SELECT COUNT(*) as count FROM accounts')
+    const txnCountResult = await existingDb.query('SELECT COUNT(*) as count FROM transactions')
+    const existingAccounts = (acctCountResult.values || [])[0]?.count || 0
+    const existingTransactions = (txnCountResult.values || [])[0]?.count || 0
+    const incomingAccounts = envelope.tables.accounts.length
+    const incomingTransactions = envelope.tables.transactions.length
+    console.log('[MobileBackup] Wipe-guard check — existing:', { existingAccounts, existingTransactions }, 'incoming:', { incomingAccounts, incomingTransactions })
+    if (existingAccounts > 0 && incomingAccounts === 0) {
+      throw new Error(`Refusing to import: the cloud backup has 0 accounts but this device has ${existingAccounts}. This looks like a stale or corrupted backup file — use Force Push if you intended to overwrite the cloud backup with this device's data instead.`)
+    }
+    if (existingTransactions >= 5 && incomingTransactions === 0) {
+      throw new Error(`Refusing to import: the cloud backup has 0 transactions but this device has ${existingTransactions}. This looks like a stale or corrupted backup file — use Force Push if you intended to overwrite the cloud backup with this device's data instead.`)
+    }
+  } catch (guardError) {
+    if (guardError instanceof Error && guardError.message.startsWith('Refusing to import')) {
+      throw guardError
+    }
+    console.warn('[MobileBackup] Wipe-guard check failed to run, proceeding with import:', guardError)
+  }
+
   // Close any existing connection first to guarantee a completely fresh native state.
   await closeDatabase()
   await initializeDatabase()

@@ -242,24 +242,22 @@ async function mobilePush(filePath: string, passphrase?: string): Promise<{ succ
     }
   }
 
-  // Write once. fd.sync() (fsync) inside doWrite() already guarantees the bytes were
-  // durably flushed to the underlying storage for that file descriptor — that is the
-  // real integrity guarantee. A stale read immediately afterwards (via a brand new
-  // ContentResolver/file-descriptor open) is a metadata-caching quirk of some cloud
-  // providers, not evidence the write failed. Rewriting the whole file again on every
-  // "mismatch" just adds more churn for the provider to catch up on, so we only retry
-  // the *verification* here, with increasing backoff, rather than re-invoking doWrite().
+  // Write once, then retry only the *verification* (not the write itself) with
+  // increasing backoff. If verification never succeeds, surface a real error —
+  // field testing showed the underlying write can genuinely fail to reach the
+  // real cloud file for some providers even when the local fd.sync() succeeds,
+  // so a failed verification must NOT be reported as success.
   const result = await doWrite()
 
   const VERIFY_DELAYS_MS = [500, 1000, 2000, 4000]
-  let lastMismatch: string | undefined
+  let lastError = new Error('Cloud backup verification failed')
   for (let attempt = 1; attempt <= VERIFY_DELAYS_MS.length; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, VERIFY_DELAYS_MS[attempt - 1]))
 
     const afterInfo = await getCloudFileInfo(filePath)
     console.log('[SyncEngine] mobilePush post-write info:', { attempt, filePath, size: afterInfo.size, expected: data.length })
     if (afterInfo.exists && afterInfo.size !== data.length) {
-      lastMismatch = `size mismatch: wrote ${data.length} bytes but provider reports ${afterInfo.size}`
+      lastError = new Error(`Cloud backup size mismatch (attempt ${attempt}): wrote ${data.length} bytes but provider reports ${afterInfo.size}`)
       console.warn('[SyncEngine] mobilePush post-write size mismatch (retrying verification):', { attempt, size: afterInfo.size, expected: data.length })
       continue
     }
@@ -269,15 +267,11 @@ async function mobilePush(filePath: string, passphrase?: string): Promise<{ succ
       console.log('[SyncEngine] mobilePush verification passed on attempt', attempt)
       return result
     }
-    lastMismatch = `hash mismatch: expected ${hash.slice(0, 16)}, got ${readBackHash ? readBackHash.slice(0, 16) : 'null'}`
-    console.warn('[SyncEngine] mobilePush verification FAILED on attempt', attempt, lastMismatch)
+    lastError = new Error(`Cloud backup verification failed (attempt ${attempt}): expected hash ${hash.slice(0, 16)}, got ${readBackHash ? readBackHash.slice(0, 16) : 'null'}`)
+    console.warn('[SyncEngine] mobilePush verification FAILED on attempt', attempt, lastError.message)
   }
 
-  // The write itself succeeded and was fsync'd; we just couldn't confirm it via a
-  // read-back within our retry window (likely provider-side metadata propagation lag).
-  // Trust the write rather than surfacing a false failure to the user.
-  console.warn('[SyncEngine] mobilePush: could not verify write via read-back, but trusting fsync\'d write. Last mismatch:', lastMismatch)
-  return result
+  throw lastError
 }
 
 async function getCloudFileFingerprint(filePath: string): Promise<string | null> {
@@ -303,13 +297,32 @@ async function getCloudFileFingerprint(filePath: string): Promise<string | null>
   }
 }
 
+/* ─── Exclusive execution lock ───
+ * Ensures push and pull never run concurrently. A concurrent push (which reads the
+ * current DB state to export it) racing against a pull (which closes and reopens the
+ * DB connection, then deletes and re-inserts every table) can corrupt or wipe local
+ * data, or export a half-imported/empty snapshot that then overwrites a good cloud
+ * backup. All sync entry points (auto-sync, force push/pull, pull-to-refresh) funnel
+ * through pushCloudBackup/pullCloudBackup below, so locking there covers every path. */
+let syncQueue: Promise<unknown> = Promise.resolve()
+
+function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const run = syncQueue.then(fn, fn)
+  syncQueue = run.then(() => undefined, () => undefined)
+  return run
+}
+
 /* ─── Unified operations ─── */
 
 export async function getCloudFileInfo(filePath: string): Promise<CloudFileInfo> {
   return isNative ? mobileFileInfo(filePath) : desktopFileInfo(filePath)
 }
 
-export async function pullCloudBackup(filePath: string): Promise<{ success: boolean; summary: Record<string, number> }> {
+export function pullCloudBackup(filePath: string): Promise<{ success: boolean; summary: Record<string, number> }> {
+  return runExclusive(() => pullCloudBackupImpl(filePath))
+}
+
+async function pullCloudBackupImpl(filePath: string): Promise<{ success: boolean; summary: Record<string, number> }> {
   const passphrase = getSessionPassphrase() || undefined
   console.log('[SyncEngine] pullCloudBackup:', { filePath, hasPassphrase: !!passphrase, isNative })
   // Capture the cloud file size before reading so we can track it for Content URI change detection
@@ -335,7 +348,11 @@ export async function pullCloudBackup(filePath: string): Promise<{ success: bool
   return result
 }
 
-export async function pushCloudBackup(filePath: string): Promise<{ success: boolean; modifiedAt: string; size: number; hash?: string }> {
+export function pushCloudBackup(filePath: string): Promise<{ success: boolean; modifiedAt: string; size: number; hash?: string }> {
+  return runExclusive(() => pushCloudBackupImpl(filePath))
+}
+
+async function pushCloudBackupImpl(filePath: string): Promise<{ success: boolean; modifiedAt: string; size: number; hash?: string }> {
   const passphrase = getSessionPassphrase() || undefined
   console.log('[SyncEngine] pushCloudBackup starting:', { filePath, hasPassphrase: !!passphrase, isNative })
   const result = isNative

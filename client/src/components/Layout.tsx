@@ -73,6 +73,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null)
   const [syncConflict, setSyncConflict] = useState<{ open: boolean; filePath: string | null }>({ open: false, filePath: null })
   const [autoSyncError, setAutoSyncError] = useState<string | null>(null)
+  const [desktopRefreshing, setDesktopRefreshing] = useState(false)
 
   const lockedRef = useRef(locked)
   useEffect(() => {
@@ -251,6 +252,30 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }
   }
 
+  const handleDesktopForcePull = async () => {
+    setDesktopRefreshing(true)
+    try {
+      const settings = await getCloudSyncSettings()
+      if (!settings.enabled || !settings.filePath) {
+        window.alert('Cloud sync is not enabled.')
+        return
+      }
+      const result = await pullCloudBackup(settings.filePath)
+      if (result.success) {
+        await refreshLocalPreferences()
+        window.dispatchEvent(new CustomEvent('sync:pulled', { detail: result }))
+        window.location.reload()
+      } else {
+        window.alert('Force pull failed.')
+      }
+    } catch (e: any) {
+      console.error('[Layout] Desktop force pull failed:', e)
+      window.alert(`Force pull failed: ${e.message || 'Unknown error'}`)
+    } finally {
+      setDesktopRefreshing(false)
+    }
+  }
+
   const handleUnlock = () => setLocked(false)
 
   const handleSetupComplete = () => {
@@ -315,11 +340,32 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 <p className="text-xs text-gray-500 leading-tight">A complete budgeting app which forecasts future transactions to help identify and resolve low balance periods</p>
               )}
             </div>
-            <img
-              src={typeof window !== 'undefined' && window.location.protocol === 'file:' ? new URL('icon-64.png', window.location.href).href : '/icon-64.png'}
-              alt="Money Weather"
-              className="h-10 w-10 object-contain"
-            />
+            <div className="flex items-center gap-3">
+              {!isNativePlatform() && (
+                <button
+                  onClick={handleDesktopForcePull}
+                  disabled={desktopRefreshing}
+                  title="Force pull the latest data from the cloud backup, regardless of timestamps"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg
+                    className={`h-4 w-4 ${desktopRefreshing ? 'animate-spin' : ''}`}
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {desktopRefreshing ? 'Pulling...' : 'Force Pull'}
+                </button>
+              )}
+              <img
+                src={typeof window !== 'undefined' && window.location.protocol === 'file:' ? new URL('icon-64.png', window.location.href).href : '/icon-64.png'}
+                alt="Money Weather"
+                className="h-10 w-10 object-contain"
+              />
+            </div>
           </div>
         </div>
       </header>
