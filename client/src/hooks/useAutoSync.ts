@@ -66,13 +66,18 @@ export function useAutoSync(locked: boolean) {
 
       try {
         const result = await performSync(settings.filePath)
-        if (result.action !== 'none') {
+        if (result.action === 'error') {
+          console.error('[AutoSync] performSync reported an error:', result.message)
+          window.dispatchEvent(new CustomEvent('sync:autoError', { detail: { message: result.message } }))
+        } else if (result.action !== 'none') {
           console.log('[AutoSync]', result.action, result.message)
         } else {
           console.log('[AutoSync] no action needed')
         }
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
         console.error('[AutoSync] Error:', err)
+        window.dispatchEvent(new CustomEvent('sync:autoError', { detail: { message } }))
       }
     }
 

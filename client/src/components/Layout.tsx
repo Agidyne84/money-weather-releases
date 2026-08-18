@@ -72,6 +72,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [lockReady, setLockReady] = useState(false)
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null)
   const [syncConflict, setSyncConflict] = useState<{ open: boolean; filePath: string | null }>({ open: false, filePath: null })
+  const [autoSyncError, setAutoSyncError] = useState<string | null>(null)
 
   const lockedRef = useRef(locked)
   useEffect(() => {
@@ -148,6 +149,17 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }
     window.addEventListener('sync:pulled', handlePulled)
 
+    // Surface background auto-sync failures instead of only logging them silently,
+    // so "automatic" sync problems are actually visible to the user.
+    let autoErrorTimer: ReturnType<typeof setTimeout> | null = null
+    const handleAutoSyncError = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      setAutoSyncError(detail?.message || 'Automatic sync failed')
+      if (autoErrorTimer) clearTimeout(autoErrorTimer)
+      autoErrorTimer = setTimeout(() => setAutoSyncError(null), 8000)
+    }
+    window.addEventListener('sync:autoError', handleAutoSyncError)
+
     // Prompt to save on close if dirty
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isDirty()) {
@@ -191,10 +203,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       if (idleTimer) clearTimeout(idleTimer)
+      if (autoErrorTimer) clearTimeout(autoErrorTimer)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('beforeunload', handleBeforeUnload)
       window.removeEventListener('sync:conflict', handleConflict)
       window.removeEventListener('sync:pulled', handlePulled)
+      window.removeEventListener('sync:autoError', handleAutoSyncError)
       userActivityEvents.forEach((event) => {
         document.removeEventListener(event, handleUserActivity)
       })
@@ -255,6 +269,14 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
       {!locked && <UpdateStatus />}
       {isNativePlatform() && !locked && <MobileUpdatePrompt />}
+
+      {/* Auto-sync failure toast */}
+      {autoSyncError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] bg-red-600 text-white text-xs px-4 py-2 rounded-full shadow-lg max-w-[90vw] flex items-center gap-2">
+          <span className="truncate">Auto-sync failed: {autoSyncError}</span>
+          <button onClick={() => setAutoSyncError(null)} className="font-bold px-1">×</button>
+        </div>
+      )}
 
       {/* Sync Conflict Dialog */}
       {syncConflict.open && (

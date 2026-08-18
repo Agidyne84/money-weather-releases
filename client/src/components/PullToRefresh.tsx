@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { Capacitor } from '@capacitor/core'
-import { getCloudSyncSettings, checkCloudSyncStatus, pullCloudBackup, refreshLocalPreferences } from '../services/syncEngine'
+import { getCloudSyncSettings, pullCloudBackup, refreshLocalPreferences } from '../services/syncEngine'
 import { getSessionPassphrase } from '../services/securePassphrase'
 
 const isNative = Capacitor.isNativePlatform()
@@ -38,25 +38,23 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, onRefresh }) =>
         setMessage('Unlock cloud sync password to refresh')
         return
       }
-      const status = await checkCloudSyncStatus(settings.filePath)
-      if (status === 'newer') {
-        const result = await pullCloudBackup(settings.filePath)
-        if (result.success) {
-          await refreshLocalPreferences()
-          window.dispatchEvent(new CustomEvent('sync:pulled', { detail: result }))
-          setMessage('Pulled latest backup from cloud')
-        } else {
-          setMessage('Pull failed')
-        }
-      } else if (status === 'older') {
-        setMessage('Local changes are newer — pushing instead')
-        window.dispatchEvent(new CustomEvent('sync:dirty'))
-      } else if (status === 'same') {
-        setMessage('Already up to date')
-      } else if (status === 'missing') {
-        setMessage('Cloud backup file not found')
+      // This is a *force* pull: pulling from the top should always fetch the latest
+      // cloud backup, the same way "Force Pull from Cloud" on the Setup page does.
+      // Relying on checkCloudSyncStatus() here caused pull-to-refresh to silently no-op
+      // whenever the newer/older heuristic (size/hash comparison) failed to detect a
+      // real remote change, which is unreliable for content:// (cloud-synced folder) URIs.
+      const result = await pullCloudBackup(settings.filePath)
+      if (result.success) {
+        await refreshLocalPreferences()
+        window.dispatchEvent(new CustomEvent('sync:pulled', { detail: result }))
+        setMessage('Pulled latest backup from cloud')
+        // Reload the app so every page re-reads the freshly pulled data. Individual
+        // pages only listened for 'sync:pulled' to refresh a few preference values,
+        // not the full accounts/transactions/budget data, so pulled changes were
+        // invisible until the user manually navigated away and back.
+        setTimeout(() => window.location.reload(), 400)
       } else {
-        setMessage('Could not check cloud backup status')
+        setMessage('Pull failed')
       }
     } catch (err) {
       console.error('[PullToRefresh] refresh failed:', err)
