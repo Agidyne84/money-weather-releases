@@ -1,7 +1,7 @@
 {
-    "version":  "1.1.93",
-    "versionCode":  10193,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.93/app-release.apk",
+    "version":  "1.1.94",
+    "versionCode":  10194,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.94/app-release.apk",
     "force":  false,
     "releaseNotes":  "Cloud sync fixes: preserve PIN-wrapped passphrase to avoid repeated backup password prompts, guard push/pull so encrypted backups are never silently overwritten unencrypted, and switch mobile file selection to a folder-first flow with .budgetbackup file selection."
 }
