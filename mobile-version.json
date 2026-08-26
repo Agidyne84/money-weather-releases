@@ -3,5 +3,5 @@
     "versionCode":  10193,
     "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.93/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Hotfix: use GitHub Contents API for the mobile OTA version check so the app is not blocked by raw.githubusercontent.com CDN caching, plus the v1.1.86 sync fixes."
+    "releaseNotes":  "Cloud sync fixes: preserve PIN-wrapped passphrase to avoid repeated backup password prompts, guard push/pull so encrypted backups are never silently overwritten unencrypted, and switch mobile file selection to a folder-first flow with .budgetbackup file selection."
 }

@@ -242,32 +242,43 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Mobile: pick a folder (SAF tree) so all later reads/writes can use the safer
-    // create-temp-then-rename strategy. Some providers (OneDrive) do not reliably
-    // update a single picked document in place, but they handle creating a new
-    // document and renaming it correctly. After picking the folder, the user selects
-    // the specific .budgetbackup file they want to sync, supporting multiple backups
-    // in the same folder.
+    // Mobile: prefer the folder picker (SAF tree) so all reads/writes can use the
+    // safer create-temp-then-rename strategy and users can pick among multiple
+    // .budgetbackup files. Some providers (OneDrive) do not expose
+    // ACTION_OPEN_DOCUMENT_TREE, so fall back to a single-file picker if needed.
     setLoading(true)
     setMessage(null)
     try {
-      const folder = await CloudFile.pickFolder()
-      console.log('[CloudSync] pickFolder result:', folder.uri)
+      try {
+        const folder = await CloudFile.pickFolder()
+        console.log('[CloudSync] pickFolder result:', folder.uri)
 
-      const list = await CloudFile.listFilesInFolder({ treeUri: folder.uri, extension: '.budgetbackup' })
-      console.log('[CloudSync] listFilesInFolder found:', list.files.length, 'files')
+        const list = await CloudFile.listFilesInFolder({ treeUri: folder.uri, extension: '.budgetbackup' })
+        console.log('[CloudSync] listFilesInFolder found:', list.files.length, 'files')
 
-      if (list.files.length === 0) {
-        setMessage({
-          type: 'error',
-          text: 'No .budgetbackup files found in this folder. Create an empty backup file in your cloud app first, then select it here.',
-        })
+        if (list.files.length === 0) {
+          setMessage({
+            type: 'error',
+            text: 'No .budgetbackup files found in this folder. Create an empty backup file in your cloud app first, then select it here.',
+          })
+          return
+        }
+
+        setFolderUri(folder.uri)
+        setFolderFiles(list.files)
+        setShowFolderFilePicker(true)
         return
+      } catch (folderErr) {
+        const folderMsg = folderErr instanceof Error ? folderErr.message : String(folderErr)
+        if (folderMsg === 'User cancelled') {
+          return
+        }
+        console.warn('[CloudSync] Folder picker unavailable/failed, falling back to file picker:', folderMsg)
       }
 
-      setFolderUri(folder.uri)
-      setFolderFiles(list.files)
-      setShowFolderFilePicker(true)
+      // Fallback: single-file picker (works with OneDrive and other providers that
+      // do not support folder access). Writes use the direct content-URI path.
+      await runLegacyMobileFilePicker()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       if (msg !== 'User cancelled') {
@@ -277,6 +288,51 @@ const CloudSyncSettings: React.FC = () => {
     } finally {
       setLoading(false)
     }
+  }
+
+  const runLegacyMobileFilePicker = async () => {
+    // Persist a marker BEFORE opening the picker. If Android kills our activity
+    // while the picker is open, we'll recover on next mount.
+    await Preferences.set({
+      key: 'cloud_sync_pending_verify',
+      value: JSON.stringify({ uri: '', warning: '', stage: 'picking' }),
+    })
+
+    const pick = await CloudFile.pickFile({ mimeType: '*/*' })
+    console.log('[CloudSync] pickFile result:', pick.uri, pick.name)
+
+    const fileName = (pick.name || pick.uri || '').toString()
+    const hasBackupExt = fileName.toLowerCase().endsWith('.budgetbackup')
+    const warning = hasBackupExt ? null : `This file does not have a .budgetbackup extension (${fileName}). Make sure it is a valid backup.`
+
+    // If the selected file is empty (0 bytes), treat this as setting up a brand
+    // new backup rather than verifying an existing one. This lets "Select
+    // Existing" double as "Create New" for providers like OneDrive that don't
+    // support any picker capable of creating a new document.
+    let isEmpty = false
+    try {
+      const info = await CloudFile.getFileInfo({ uri: pick.uri })
+      isEmpty = info.exists && info.size === 0
+    } catch {
+      // If we can't stat it, fall through to the normal verify-existing flow.
+    }
+
+    setFileWarning(isEmpty ? null : warning)
+
+    await Preferences.set({
+      key: 'cloud_sync_pending_verify',
+      value: JSON.stringify({ uri: pick.uri, warning, stage: isEmpty ? 'create-new' : 'verify', name: pick.name || null }),
+    })
+
+    setPendingFileBuffer(null)
+    setPendingFileName(pick.uri)
+    setPendingDisplayName(pick.name || null)
+    setPassword('')
+    setConfirmPassword('')
+    setSetupPin('')
+    setVerifyError(false)
+    setPasswordModalContext(isEmpty ? 'create-new' : 'verify-existing')
+    setShowPasswordModal(true)
   }
 
   const handleSelectFolderFile = async (file: CloudFolderFile) => {
