@@ -112,6 +112,75 @@ public class CloudFilePlugin extends Plugin {
         startActivityForResult(call, intent, "pickFolderResult");
     }
 
+    // List child documents within a picked folder tree, optionally filtered by extension.
+    // This lets users pick a folder once and then choose an individual backup file from it.
+    @PluginMethod
+    public void listFilesInFolder(PluginCall call) {
+        String treeUriString = call.getString("treeUri");
+        String extension = call.getString("extension");
+        if (treeUriString == null || treeUriString.isEmpty()) {
+            call.reject("treeUri is required");
+            return;
+        }
+
+        Uri treeUri = Uri.parse(treeUriString);
+        ContentResolver resolver = getContext().getContentResolver();
+        String parentDocumentId = DocumentsContract.getTreeDocumentId(treeUri);
+        Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocumentId);
+
+        JSObject result = new JSObject();
+        org.json.JSONArray files = new org.json.JSONArray();
+        try (Cursor cursor = resolver.query(
+                childrenUri,
+                new String[]{
+                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                        DocumentsContract.Document.COLUMN_SIZE,
+                        DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                },
+                null, null, null)) {
+            if (cursor != null) {
+                int idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+                int nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+                int sizeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE);
+                int modifiedIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
+                while (cursor.moveToNext()) {
+                    String displayName = cursor.getString(nameIndex);
+                    if (displayName == null) continue;
+                    if (extension != null && !extension.isEmpty() && !displayName.toLowerCase().endsWith(extension.toLowerCase())) {
+                        continue;
+                    }
+                    JSObject file = new JSObject();
+                    file.put("name", displayName);
+                    if (idIndex >= 0) {
+                        String docId = cursor.getString(idIndex);
+                        file.put("uri", DocumentsContract.buildDocumentUriUsingTree(treeUri, docId).toString());
+                    }
+                    long size = -1;
+                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                        size = cursor.getLong(sizeIndex);
+                    }
+                    file.put("size", size);
+                    String modifiedAt = null;
+                    if (modifiedIndex >= 0 && !cursor.isNull(modifiedIndex)) {
+                        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US);
+                        sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                        modifiedAt = sdf.format(new java.util.Date(cursor.getLong(modifiedIndex)));
+                    }
+                    file.put("modifiedAt", modifiedAt);
+                    files.put(file);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error listing files in folder: " + e.getMessage(), e);
+            call.reject("Error listing files: " + e.getMessage());
+            return;
+        }
+
+        result.put("files", files);
+        call.resolve(result);
+    }
+
     // Locate a child document within a picked folder tree by its display name.
     // Returns null if no matching child exists.
     private Uri findChildDocumentUri(Uri treeUri, String fileName) {

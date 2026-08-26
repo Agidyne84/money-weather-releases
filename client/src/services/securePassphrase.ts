@@ -292,22 +292,35 @@ export async function storePassphrase(pin: string, passphrase: string): Promise<
  * The SMK is only stored in the OS secure store. This is used when the user
  * has unlocked with biometric and enters the backup password directly, or when
  * setting up sync on a device where the PIN is not available.
+ *
+ * To avoid breaking PIN-unlock recovery, we reuse the existing SMK from secure
+ * storage whenever possible. Since the SMK (not the passphrase) is what the
+ * PIN-wrapped bundle protects, reusing the same SMK lets PIN unlock continue
+ * to work after the user re-enters the backup password.
  */
 export async function storePassphraseSecurely(passphrase: string): Promise<void> {
-  const smk = await generateSMK()
-  const smkRaw = await exportSMK(smk)
+  let smkRaw: ArrayBuffer
 
+  // Try to reuse the existing SMK so that any existing PIN-wrapped copy stays valid.
+  const existingSmkRaw = await getSMKSecurely()
+  if (existingSmkRaw) {
+    smkRaw = existingSmkRaw
+    console.log('[securePassphrase] Reusing existing SMK from secure storage')
+  } else {
+    const smk = await generateSMK()
+    smkRaw = await exportSMK(smk)
+    await storeSMKSecurely(smkRaw)
+    // No existing PIN-wrapped copy exists for this new SMK, so there is nothing to preserve.
+    await Preferences.remove({ key: SMK_PIN_KEY })
+    console.log('[securePassphrase] Generated new SMK and stored in secure storage')
+  }
+
+  const smk = await importSMK(smkRaw)
   const passphraseBundle = await aesGcmEncrypt(passphrase, smk)
   await Preferences.set({
     key: PASSPHRASE_SMK_KEY,
     value: JSON.stringify(passphraseBundle),
   })
-
-  // Remove any PIN-wrapped SMK because the SMK has changed and the old
-  // PIN-wrapped copy would no longer decrypt the passphrase.
-  await Preferences.remove({ key: SMK_PIN_KEY })
-
-  await storeSMKSecurely(smkRaw)
 
   sessionPassphrase = passphrase
   console.log('[securePassphrase] Passphrase stored securely (secure store only)')

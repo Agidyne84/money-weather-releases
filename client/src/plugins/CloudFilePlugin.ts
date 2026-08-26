@@ -31,6 +31,13 @@ export interface CloudFolderPickResult {
   uri: string
 }
 
+export interface CloudFolderFile {
+  name: string
+  uri: string
+  size: number
+  modifiedAt: string | null
+}
+
 export interface CloudFolderWriteOptions {
   treeUri: string
   fileName: string
@@ -44,6 +51,7 @@ export interface CloudFilePlugin {
   readFile(options: { uri: string }): Promise<CloudFileReadResult>
   writeFile(options: CloudFileWriteOptions): Promise<CloudFileWriteResult>
   pickFolder(): Promise<CloudFolderPickResult>
+  listFilesInFolder(options: { treeUri: string; extension?: string }): Promise<{ files: CloudFolderFile[] }>
   getFileInfoInFolder(options: { treeUri: string; fileName: string }): Promise<CloudFileInfoResult>
   readFileInFolder(options: { treeUri: string; fileName: string }): Promise<CloudFileReadResult>
   writeFileInFolder(options: CloudFolderWriteOptions): Promise<CloudFileWriteResult>
@@ -67,6 +75,9 @@ const CloudFile = registerPlugin<CloudFilePlugin>('CloudFile', {
       },
       pickFolder: async () => {
         throw new Error('CloudFile.pickFolder is not supported on web')
+      },
+      listFilesInFolder: async () => {
+        throw new Error('CloudFile.listFilesInFolder is not supported on web')
       },
       getFileInfoInFolder: async () => {
         throw new Error('CloudFile.getFileInfoInFolder is not supported on web')

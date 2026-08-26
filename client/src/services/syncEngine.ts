@@ -14,6 +14,8 @@ import {
 } from '../utils/mobileBackup'
 import {
   getSessionPassphrase,
+  hasStoredPassphrase,
+  unlockPassphraseFromSecureStorage,
 } from './securePassphrase'
 import { isDirty, clearDirty } from './dirtyTracker'
 import { preferencesApi } from './database'
@@ -92,6 +94,31 @@ async function computeFileFingerprint(buffer: ArrayBuffer): Promise<string> {
 async function getStoredFileFingerprint(): Promise<string | null> {
   const { value } = await Preferences.get({ key: CLOUD_SYNC_FILE_HASH_KEY })
   return value || null
+}
+
+/**
+ * Ensure a session passphrase is available before reading or writing an encrypted
+ * backup. If a passphrase has been configured but the session does not have it,
+ * try to recover it from the OS secure store (set up by a prior PIN/biometric
+ * unlock). Throw a clear error if recovery fails so the caller surfaces a password
+ * prompt instead of silently writing unencrypted data or failing decryption.
+ */
+async function ensureSessionPassphrase(): Promise<void> {
+  if (getSessionPassphrase()) return
+
+  if (await hasStoredPassphrase()) {
+    const recovered = await unlockPassphraseFromSecureStorage()
+    if (recovered) {
+      console.log('[SyncEngine] Recovered session passphrase from secure storage')
+      return
+    }
+  }
+
+  if (await hasStoredPassphrase()) {
+    throw new Error(
+      'Cloud sync password is locked. Please unlock the app or re-enter your backup password in Setup > Cloud Sync.'
+    )
+  }
 }
 
 export async function setLastSyncTimestamp(timestamp: string, fileSize?: number, fileHash?: string): Promise<void> {
@@ -392,6 +419,7 @@ export function pullCloudBackup(filePath: string): Promise<{ success: boolean; s
 }
 
 async function pullCloudBackupImpl(filePath: string): Promise<{ success: boolean; summary: Record<string, number> }> {
+  await ensureSessionPassphrase()
   const passphrase = getSessionPassphrase() || undefined
   console.log('[SyncEngine] pullCloudBackup:', { filePath, hasPassphrase: !!passphrase, isNative })
   // Capture the cloud file size before reading so we can track it for Content URI change detection
@@ -422,6 +450,7 @@ export function pushCloudBackup(filePath: string): Promise<{ success: boolean; m
 }
 
 async function pushCloudBackupImpl(filePath: string): Promise<{ success: boolean; modifiedAt: string; size: number; hash?: string }> {
+  await ensureSessionPassphrase()
   const passphrase = getSessionPassphrase() || undefined
   console.log('[SyncEngine] pushCloudBackup starting:', { filePath, hasPassphrase: !!passphrase, isNative })
   const result = isNative

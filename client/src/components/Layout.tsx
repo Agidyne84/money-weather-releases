@@ -12,7 +12,7 @@ import AppVersion from './AppVersion'
 import { isLockEnabled, isLockSetupComplete } from '../services/lockService'
 import { getCloudSyncSettings, checkCloudSyncStatus, pullCloudBackup, pushCloudBackup, refreshLocalPreferences } from '../services/syncEngine'
 import { isDirty } from '../services/dirtyTracker'
-import { getSessionPassphrase } from '../services/securePassphrase'
+import { getSessionPassphrase, unlockPassphraseFromSecureStorage } from '../services/securePassphrase'
 import { useAutoSync } from '../hooks/useAutoSync'
 
 function isNativePlatform(): boolean {
@@ -215,14 +215,33 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }
   }, [])
 
+  const handleUnlock = async () => {
+    setLocked(false)
+    // The PIN/biometric unlock paths in AppLock/lockService already try to recover
+    // the cloud sync passphrase. As a fallback (e.g. secure storage delayed or
+    // biometric-only setup), attempt recovery here too so sync can run without
+    // prompting for the backup password again.
+    try {
+      if (!getSessionPassphrase()) {
+        const ok = await unlockPassphraseFromSecureStorage()
+        console.log('[Layout] Unlock passphrase recovery from secure storage:', ok)
+      }
+    } catch (e) {
+      console.warn('[Layout] Could not recover cloud sync passphrase on unlock:', e)
+    }
+  }
+
   const handleSyncAccept = async () => {
     if (!syncConflict.filePath) return
     try {
       const passphrase = getSessionPassphrase()
       if (!passphrase) {
-        window.alert('Please enter your PIN to unlock the cloud sync password in Setup > Cloud Sync.')
-        setSyncConflict({ open: false, filePath: null })
-        return
+        const recovered = await unlockPassphraseFromSecureStorage()
+        if (!recovered) {
+          window.alert('Please enter your PIN to unlock the cloud sync password in Setup > Cloud Sync.')
+          setSyncConflict({ open: false, filePath: null })
+          return
+        }
       }
       const result = await pullCloudBackup(syncConflict.filePath)
       await refreshLocalPreferences()
@@ -239,9 +258,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     try {
       const passphrase = getSessionPassphrase()
       if (!passphrase) {
-        window.alert('Please enter your PIN to unlock the cloud sync password in Setup > Cloud Sync.')
-        setSyncConflict({ open: false, filePath: null })
-        return
+        const recovered = await unlockPassphraseFromSecureStorage()
+        if (!recovered) {
+          window.alert('Please enter your PIN to unlock the cloud sync password in Setup > Cloud Sync.')
+          setSyncConflict({ open: false, filePath: null })
+          return
+        }
       }
       await pushCloudBackup(syncConflict.filePath)
       setSyncConflict({ open: false, filePath: null })
@@ -250,8 +272,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       window.alert(`Failed to push to cloud: ${e.message || 'Unknown error'}`)
     }
   }
-
-  const handleUnlock = () => setLocked(false)
 
   const handleSetupComplete = () => {
     setSetupComplete(true)

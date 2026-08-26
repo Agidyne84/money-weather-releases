@@ -28,7 +28,7 @@ import {
   unlockPassphraseFromSecureStorage,
 } from '../services/securePassphrase'
 import { verifyBackupPassword, base64ToArrayBuffer } from '../utils/mobileBackup'
-import CloudFile from '../plugins/CloudFilePlugin'
+import CloudFile, { type CloudFolderFile } from '../plugins/CloudFilePlugin'
 import AppLock from './AppLock'
 
 const isNative = Capacitor.isNativePlatform()
@@ -71,6 +71,11 @@ const CloudSyncSettings: React.FC = () => {
   const [verifyError, setVerifyError] = useState(false)
   const [fileWarning, setFileWarning] = useState<string | null>(null)
   const [setupPin, setSetupPin] = useState('')
+
+  // Mobile folder-first file selection state
+  const [showFolderFilePicker, setShowFolderFilePicker] = useState(false)
+  const [folderFiles, setFolderFiles] = useState<CloudFolderFile[]>([])
+  const [folderUri, setFolderUri] = useState<string | null>(null)
 
   const displayFilePath = (path: string | null, displayName?: string | null) => {
     if (!path) return 'Not set'
@@ -237,52 +242,66 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Mobile: pick a single document (ACTION_OPEN_DOCUMENT). This is the only
-    // picker mode supported by every cloud provider, including OneDrive — OneDrive's
-    // Android app does not implement ACTION_OPEN_DOCUMENT_TREE, so a folder picker
-    // simply never shows it as an option. Selecting a specific file also naturally
-    // supports multiple backups (e.g. one file per budget/account) since the user
-    // browses to and picks the exact file each time.
+    // Mobile: pick a folder (SAF tree) so all later reads/writes can use the safer
+    // create-temp-then-rename strategy. Some providers (OneDrive) do not reliably
+    // update a single picked document in place, but they handle creating a new
+    // document and renaming it correctly. After picking the folder, the user selects
+    // the specific .budgetbackup file they want to sync, supporting multiple backups
+    // in the same folder.
     setLoading(true)
     setMessage(null)
     try {
-      // Persist a marker BEFORE opening the picker. If Android kills our activity
-      // while the picker is open, we'll recover on next mount.
-      await Preferences.set({
-        key: 'cloud_sync_pending_verify',
-        value: JSON.stringify({ uri: '', warning: '', stage: 'picking' }),
-      })
+      const folder = await CloudFile.pickFolder()
+      console.log('[CloudSync] pickFolder result:', folder.uri)
 
-      const pick = await CloudFile.pickFile({ mimeType: '*/*' })
-      console.log('[CloudSync] pickFile result:', pick.uri, pick.name)
+      const list = await CloudFile.listFilesInFolder({ treeUri: folder.uri, extension: '.budgetbackup' })
+      console.log('[CloudSync] listFilesInFolder found:', list.files.length, 'files')
 
-      const fileName = (pick.name || pick.uri || '').toString()
-      const hasBackupExt = fileName.toLowerCase().endsWith('.budgetbackup')
-      const warning = hasBackupExt ? null : `This file does not have a .budgetbackup extension (${fileName}). Make sure it is a valid backup.`
-
-      // If the selected file is empty (0 bytes), treat this as setting up a brand
-      // new backup rather than verifying an existing one. This lets "Select
-      // Existing" double as "Create New" for providers like OneDrive that don't
-      // support any picker capable of creating a new document — the user just
-      // creates an empty placeholder file in their provider's own app first.
-      let isEmpty = false
-      try {
-        const info = await CloudFile.getFileInfo({ uri: pick.uri })
-        isEmpty = info.exists && info.size === 0
-      } catch {
-        // If we can't stat it, fall through to the normal verify-existing flow.
+      if (list.files.length === 0) {
+        setMessage({
+          type: 'error',
+          text: 'No .budgetbackup files found in this folder. Create an empty backup file in your cloud app first, then select it here.',
+        })
+        return
       }
 
-      setFileWarning(isEmpty ? null : warning)
+      setFolderUri(folder.uri)
+      setFolderFiles(list.files)
+      setShowFolderFilePicker(true)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg !== 'User cancelled') {
+        console.error('[CloudSync] Select existing failed:', err)
+        setMessage({ type: 'error', text: msg })
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSelectFolderFile = async (file: CloudFolderFile) => {
+    if (!folderUri) return
+    setShowFolderFilePicker(false)
+    setLoading(true)
+    setMessage(null)
+    try {
+      const treeFilePath = encodeTreeFileRef({ treeUri: folderUri, fileName: file.name })
+      console.log('[CloudSync] Selected folder file:', file.name, 'path:', treeFilePath)
+
+      const isEmpty = file.size === 0
+      const warning = isEmpty
+        ? `Selected file "${file.name}" is empty. Create a new backup password to start syncing.`
+        : `Selected backup file "${file.name}". Enter its password to verify ownership.`
+      setFileWarning(warning)
 
       await Preferences.set({
         key: 'cloud_sync_pending_verify',
-        value: JSON.stringify({ uri: pick.uri, warning, stage: isEmpty ? 'create-new' : 'verify', name: pick.name || null }),
+        value: JSON.stringify({ uri: treeFilePath, warning, stage: isEmpty ? 'create-new' : 'verify', name: file.name }),
       })
 
       setPendingFileBuffer(null)
-      setPendingFileName(pick.uri)
-      setPendingDisplayName(pick.name || null)
+      setPendingFileName(treeFilePath)
+      setPendingDisplayName(file.name)
       setPassword('')
       setConfirmPassword('')
       setSetupPin('')
@@ -291,10 +310,8 @@ const CloudSyncSettings: React.FC = () => {
       setShowPasswordModal(true)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      if (msg !== 'User cancelled') {
-        console.error('[CloudSync] Select existing failed:', err)
-        setMessage({ type: 'error', text: msg })
-      }
+      console.error('[CloudSync] Select folder file failed:', err)
+      setMessage({ type: 'error', text: msg })
       await Preferences.remove({ key: 'cloud_sync_pending_verify' })
     } finally {
       setLoading(false)
@@ -959,10 +976,9 @@ const CloudSyncSettings: React.FC = () => {
 
             {isNative && (
               <p className="text-xs text-gray-400">
-                "Select Existing File" works with any cloud app (OneDrive, Google Drive, Dropbox, etc.) — pick the
-                exact file for this budget. "Create New File" asks for a folder and only works with providers that
-                support folder access (Google Drive, local device storage). OneDrive doesn't support folder
-                access — instead, create an empty file in the OneDrive app first, then use "Select Existing File".
+                Both options ask for a folder first, then either pick an existing .budgetbackup file or create a new
+                one. This works reliably with OneDrive, Google Drive, Dropbox, and local storage, and supports keeping
+                multiple backup files in the same folder.
               </p>
             )}
 
@@ -1066,6 +1082,43 @@ const CloudSyncSettings: React.FC = () => {
             </button>
           </div>
         </>
+      )}
+
+      {/* Folder File Picker Modal — choose an existing backup file inside a picked folder */}
+      {showFolderFilePicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900">Select Backup File</h3>
+            <p className="text-sm text-gray-600">
+              Choose the .budgetbackup file you want to sync. Create an empty placeholder file in your cloud app first if you don't see it listed.
+            </p>
+            <div className="max-h-60 overflow-y-auto space-y-2">
+              {folderFiles.map((file) => (
+                <button
+                  key={file.name}
+                  onClick={() => handleSelectFolderFile(file)}
+                  className="w-full text-left px-3 py-2 border border-gray-200 rounded-md hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <p className="text-sm font-medium text-gray-900">{file.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {file.size >= 0 ? `${file.size.toLocaleString()} bytes` : 'Size unknown'}
+                    {file.modifiedAt ? ` • ${new Date(file.modifiedAt).toLocaleString()}` : ''}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => {
+                setShowFolderFilePicker(false)
+                setFolderFiles([])
+                setFolderUri(null)
+              }}
+              className="w-full px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Password Modal — context-aware */}
