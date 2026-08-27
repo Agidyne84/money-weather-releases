@@ -335,11 +335,15 @@ export async function storePassphraseSecurely(passphrase: string): Promise<void>
   } else {
     const smk = await generateSMK()
     smkRaw = await exportSMK(smk)
-    await storeSMKSecurely(smkRaw)
     // No existing PIN-wrapped copy exists for this new SMK, so there is nothing to preserve.
     await Preferences.remove({ key: SMK_PIN_KEY })
     console.log('[securePassphrase] Generated new SMK and stored in secure storage')
   }
+
+  // Always re-write the SMK to all storage targets. This ensures the desktop
+  // Preferences fallback is populated even if the SMK was originally stored
+  // only in the OS secure store.
+  await storeSMKSecurely(smkRaw)
 
   const smk = await importSMK(smkRaw)
   const passphraseBundle = await aesGcmEncrypt(passphrase, smk)

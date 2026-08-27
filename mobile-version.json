@@ -1,7 +1,7 @@
 {
-    "version":  "1.1.97",
-    "versionCode":  10197,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.97/app-release.apk",
+    "version":  "1.1.98",
+    "versionCode":  10198,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.98/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Add SMK fallback in Preferences so the cloud sync passphrase can be recovered on desktop and when the OS secure store is unavailable. Auto-sync now tries passphrase recovery instead of skipping. Tightened wipe-guard to refuse importing a backup with zero transactions when any local transactions exist. Longer reload delay after pull to ensure mobile SQLite commits before the UI reloads."
+    "releaseNotes":  "Fix passphrase recovery on app mount/resume so an already-unlocked app does not ask for the backup password. Always write the SMK fallback when saving the cloud password. Respect the 5-minute auth timeout on mount instead of re-locking after every reload. Force SQLite WAL checkpoint before closing so pulled data is visible immediately on mobile."
 }

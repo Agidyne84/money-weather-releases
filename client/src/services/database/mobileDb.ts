@@ -281,6 +281,12 @@ export async function closeDatabase(): Promise<void> {
       // Try to clear any stuck plugin transaction state before closing
       try { await dbConnection.execute('ROLLBACK') } catch {}
       try { await dbConnection.rollbackTransaction() } catch {}
+      // Force the WAL to checkpoint into the main DB file. Without this, a
+      // subsequent new connection (or a page reload) can miss the most recent
+      // writes, which looks like "all data disappeared after a pull".
+      try { await dbConnection.execute('PRAGMA wal_checkpoint(TRUNCATE);') } catch (e) {
+        console.warn('[Mobile DB] WAL checkpoint before close failed:', e)
+      }
       await dbConnection.close()
     } catch (err) {
       console.warn('[Mobile DB] dbConnection.close() failed:', err)

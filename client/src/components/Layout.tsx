@@ -9,7 +9,7 @@ import AppLock from './AppLock'
 import FirstTimeLockSetup from './FirstTimeLockSetup'
 import MobileUpdatePrompt from './MobileUpdatePrompt'
 import AppVersion from './AppVersion'
-import { isLockEnabled, isLockSetupComplete } from '../services/lockService'
+import { isLockEnabled, isLockSetupComplete, shouldRequireAuth } from '../services/lockService'
 import { getCloudSyncSettings, checkCloudSyncStatus, pullCloudBackup, pushCloudBackup, refreshLocalPreferences } from '../services/syncEngine'
 import { isDirty } from '../services/dirtyTracker'
 import { getSessionPassphrase, unlockPassphraseFromSecureStorage } from '../services/securePassphrase'
@@ -105,7 +105,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       if (complete) {
         const enabled = await isLockEnabled()
         console.log('[Layout] isLockEnabled =', enabled)
-        if (enabled) shouldLock = true
+        // Respect the 5-minute timeout instead of forcing a lock on every mount.
+        if (enabled) shouldLock = await shouldRequireAuth()
       }
 
       setLockReady(true)
@@ -115,6 +116,11 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         // Skip all background checks while the app is locked
         return
       }
+
+      // If we are not locking, this is effectively an "unlock" state (fresh mount,
+      // resume, or reload). Make sure the cloud sync passphrase is recovered so
+      // sync does not prompt for the backup password while the app is already open.
+      await handleUnlock()
 
       // Start the foreground idle timer now that the app is unlocked.
       resetIdleTimer()
