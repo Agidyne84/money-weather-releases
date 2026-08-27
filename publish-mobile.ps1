@@ -166,6 +166,18 @@ $minor = if ($parts.Length -gt 1) { [int]$parts[1] } else { 0 }
 $patch = if ($parts.Length -gt 2) { [int]$parts[2] } else { 0 }
 $versionCode = $major * 10000 + $minor * 100 + $patch
 
+# Keep android/app/build.gradle in sync so the built APK reports the correct version.
+$buildGradlePath = Join-Path $PSScriptRoot 'client\android\app\build.gradle'
+if (Test-Path $buildGradlePath) {
+    $gradleContent = Get-Content $buildGradlePath -Raw
+    $gradleContent = [regex]::Replace($gradleContent, '(\s+versionCode\s+)\d+', "`${1}$versionCode")
+    $gradleContent = [regex]::Replace($gradleContent, '(\s+versionName\s+)"[^"]*"', "`${1}`"$Version`"")
+    [System.IO.File]::WriteAllText($buildGradlePath, $gradleContent)
+    Write-Host "Patched $buildGradlePath to versionCode=$versionCode versionName=$Version" -ForegroundColor Gray
+} else {
+    Write-Warning "Could not find $buildGradlePath; APK may have the wrong versionCode."
+}
+
 Write-Host "`n=== Money Weather Mobile Publisher ===" -ForegroundColor Green
 Write-Host "Version:     $Version"
 Write-Host "VersionCode: $versionCode"
