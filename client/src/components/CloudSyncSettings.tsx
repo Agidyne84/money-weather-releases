@@ -748,6 +748,10 @@ const CloudSyncSettings: React.FC = () => {
         await refreshLocalPreferences()
         window.dispatchEvent(new CustomEvent('sync:pulled', { detail: result }))
         setMessage({ type: 'success', text: 'Force pull complete. Data restored from cloud backup.' })
+        // Reload the app so every page re-reads the freshly pulled data, just like
+        // pull-to-refresh does. Pages only listen for sync:pulled to refresh a few
+        // preference values, not the full accounts/transactions/budget data.
+        setTimeout(() => window.location.reload(), 400)
       } else {
         setMessage({ type: 'error', text: 'Force pull failed.' })
       }

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { getCloudSyncSettings, pullCloudBackup, refreshLocalPreferences } from '../services/syncEngine'
+import { getSessionPassphrase, hasStoredPassphrase, unlockPassphraseFromSecureStorage } from '../services/securePassphrase'
 
 const isNative = Capacitor.isNativePlatform()
 const PULL_THRESHOLD = 80 // px
@@ -49,6 +50,15 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, onRefresh }) =>
       // Relying on checkCloudSyncStatus() here caused pull-to-refresh to silently no-op
       // whenever the newer/older heuristic (size/hash comparison) failed to detect a
       // real remote change, which is unreliable for content:// (cloud-synced folder) URIs.
+
+      // Recover the passphrase from secure storage if it isn't already in session memory.
+      // Without this, a pull shortly after app unlock can fail with a password prompt
+      // even though the app is already unlocked.
+      if (!getSessionPassphrase() && (await hasStoredPassphrase())) {
+        const recovered = await unlockPassphraseFromSecureStorage()
+        console.log('[PullToRefresh] Passphrase recovery from secure storage:', recovered)
+      }
+
       const result = await pullCloudBackup(settings.filePath)
       if (result.success) {
         await refreshLocalPreferences()
