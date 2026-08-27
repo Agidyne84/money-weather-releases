@@ -200,26 +200,49 @@ async function storeSMKSecurely(smk: ArrayBuffer): Promise<void> {
 }
 
 async function getSMKSecurely(): Promise<ArrayBuffer | null> {
+  const candidates = await getAllSMKSecurely()
+  for (const smkRaw of candidates) {
+    if (await tryDecryptWithSMK(smkRaw)) return smkRaw
+  }
+  return null
+}
+
+async function getAllSMKSecurely(): Promise<ArrayBuffer[]> {
+  const candidates: ArrayBuffer[] = []
   try {
     const value = await SecureStorage.get(SMK_SECURE_KEY)
     console.log('[securePassphrase] SecureStorage.get result type:', typeof value, 'length:', typeof value === 'string' ? value.length : 0)
     if (value && typeof value === 'string') {
-      return base64ToArrayBuffer(value)
+      candidates.push(base64ToArrayBuffer(value))
     }
   } catch (err) {
     console.warn('[securePassphrase] Could not retrieve SMK from secure storage:', err)
   }
-  // Fallback to Preferences for desktop or if the OS secure store is unavailable
   try {
     const { value } = await Preferences.get({ key: SMK_SECURE_KEY })
     console.log('[securePassphrase] Preferences.get result type:', typeof value, 'length:', typeof value === 'string' ? value.length : 0)
     if (value && typeof value === 'string') {
-      return base64ToArrayBuffer(value)
+      candidates.push(base64ToArrayBuffer(value))
     }
   } catch (err) {
     console.warn('[securePassphrase] Could not retrieve SMK from Preferences fallback:', err)
   }
-  return null
+  return candidates
+}
+
+async function tryDecryptWithSMK(smkRaw: ArrayBuffer): Promise<boolean> {
+  try {
+    const bundleJson = (await Preferences.get({ key: PASSPHRASE_SMK_KEY })).value
+    if (!bundleJson) return false
+    const bundle: AesGcmBundle = JSON.parse(bundleJson)
+    const smk = await importSMK(smkRaw)
+    const decrypted = await aesGcmDecrypt(bundle, smk)
+    sessionPassphrase = decrypted
+    console.log('[securePassphrase] Decrypted passphrase with SMK, length:', sessionPassphrase?.length ?? 0)
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function removeSMKSecurely(): Promise<void> {

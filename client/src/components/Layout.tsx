@@ -125,10 +125,11 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       // Start the foreground idle timer now that the app is unlocked.
       resetIdleTimer()
 
-      // After lock init, check cloud sync status (only when NOT locked)
+      // After lock init, check cloud sync status (only when NOT locked).
+      // In auto mode, let useAutoSync handle the pull without surfacing a dialog.
       try {
         const syncSettings = await getCloudSyncSettings()
-        if (syncSettings.enabled && syncSettings.filePath) {
+        if (syncSettings.enabled && syncSettings.filePath && syncSettings.syncMode !== 'auto') {
           const status = await checkCloudSyncStatus(syncSettings.filePath)
           if (status === 'newer') {
             setSyncConflict({ open: true, filePath: syncSettings.filePath })

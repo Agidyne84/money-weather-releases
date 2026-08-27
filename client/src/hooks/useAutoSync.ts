@@ -121,7 +121,13 @@ export function useAutoSync(locked: boolean) {
       timerRef.current = setTimeout(tick, interval)
     }
 
-    timerRef.current = setTimeout(tick, POLL_INTERVAL)
+    // Run once immediately on mount so an unlocked app pulls before any UI
+    // conflict prompt can be shown, then start the regular polling cycle.
+    syncIfReady().finally(() => {
+      if (!cancelled) {
+        timerRef.current = setTimeout(tick, POLL_INTERVAL)
+      }
+    })
 
     const handleDirty = () => {
       if (dirtyDebounceRef.current) clearTimeout(dirtyDebounceRef.current)

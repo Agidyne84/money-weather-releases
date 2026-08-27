@@ -396,6 +396,15 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
     throw new Error(`Restore validation failed: ${(validationError as Error).message}`)
   }
 
+  // Force a WAL checkpoint and close the native connection. When the page
+  // reloads (or the app is closed and reopened), the next connection will see
+  // the fully committed import instead of an empty database.
+  try {
+    await closeDatabase()
+  } catch (e) {
+    console.warn('[MobileBackup] closeDatabase after import failed:', e)
+  }
+
   return {
     success: true,
     summary: {
