@@ -274,7 +274,11 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
     if (guardError instanceof Error && guardError.message.startsWith('Refusing to import')) {
       throw guardError
     }
-    console.warn('[MobileBackup] Wipe-guard check failed to run, proceeding with import:', guardError)
+    // If the guard cannot verify the current local data (e.g. DB not yet open),
+    // abort the import rather than risk wiping the local database with a stale
+    // or empty cloud backup.
+    console.error('[MobileBackup] Wipe-guard check failed to run, aborting import:', guardError)
+    throw new Error('Could not verify local data before import. Import aborted to prevent accidental data loss.')
   }
 
   // Close any existing connection first to guarantee a completely fresh native state.

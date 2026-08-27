@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { Capacitor } from '@capacitor/core'
-import { getCloudSyncSettings, pullCloudBackup, refreshLocalPreferences } from '../services/syncEngine'
+import { getCloudSyncSettings, performSync, refreshLocalPreferences } from '../services/syncEngine'
 import { getSessionPassphrase, hasStoredPassphrase, unlockPassphraseFromSecureStorage } from '../services/securePassphrase'
 
 const isNative = Capacitor.isNativePlatform()
@@ -45,22 +45,21 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, onRefresh }) =>
         setMessage('Cloud sync is not enabled')
         return
       }
-      // This is a *force* pull: pulling from the top should always fetch the latest
-      // cloud backup, the same way "Force Pull from Cloud" on the Setup page does.
-      // Relying on checkCloudSyncStatus() here caused pull-to-refresh to silently no-op
-      // whenever the newer/older heuristic (size/hash comparison) failed to detect a
-      // real remote change, which is unreliable for content:// (cloud-synced folder) URIs.
+      // Run a full bidirectional sync from the pull gesture. If the cloud is newer,
+      // we pull. If local is newer/dirty, we push. This matches the auto-sync logic
+      // and fixes the problem where pull-to-refresh only pulled even when the local
+      // data was newer than the cloud backup.
 
       // Recover the passphrase from secure storage if it isn't already in session memory.
-      // Without this, a pull shortly after app unlock can fail with a password prompt
+      // Without this, a sync shortly after app unlock can fail with a password prompt
       // even though the app is already unlocked.
       if (!getSessionPassphrase() && (await hasStoredPassphrase())) {
         const recovered = await unlockPassphraseFromSecureStorage()
         console.log('[PullToRefresh] Passphrase recovery from secure storage:', recovered)
       }
 
-      const result = await pullCloudBackup(settings.filePath)
-      if (result.success) {
+      const result = await performSync(settings.filePath)
+      if (result.action === 'pulled') {
         await refreshLocalPreferences()
         window.dispatchEvent(new CustomEvent('sync:pulled', { detail: result }))
         setMessage('Pulled latest backup from cloud')
@@ -69,8 +68,12 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, onRefresh }) =>
         // not the full accounts/transactions/budget data, so pulled changes were
         // invisible until the user manually navigated away and back.
         setTimeout(() => window.location.reload(), 400)
+      } else if (result.action === 'pushed') {
+        setMessage('Pushed local data to cloud')
+      } else if (result.action === 'error') {
+        setMessage(result.message)
       } else {
-        setMessage('Pull failed')
+        setMessage('Already up to date')
       }
     } catch (err) {
       console.error('[PullToRefresh] refresh failed:', err)

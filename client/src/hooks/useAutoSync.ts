@@ -11,6 +11,7 @@ const POLL_INTERVAL = 15000 // 15 seconds normal
 const DIRTY_POLL_INTERVAL = 2000 // 2 seconds when local data is dirty
 const BACKGROUND_POLL_INTERVAL = 60000 // 60 seconds when tab is hidden
 const IMMEDIATE_SYNC_DEBOUNCE = 100 // 100ms debounce after a local change
+const RELOAD_DELAY_MS = 500 // brief delay before auto-reloading after a background pull
 
 /**
  * Background auto-sync hook.
@@ -26,6 +27,7 @@ export function useAutoSync(locked: boolean) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const visibleRef = useRef(true)
   const dirtyDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingReloadRef = useRef(false)
 
   useEffect(() => {
     if (locked) {
@@ -72,6 +74,21 @@ export function useAutoSync(locked: boolean) {
         if (result.action === 'error') {
           console.error('[AutoSync] performSync reported an error:', result.message)
           window.dispatchEvent(new CustomEvent('sync:autoError', { detail: { message: result.message } }))
+        } else if (result.action === 'pulled') {
+          console.log('[AutoSync]', result.action, result.message)
+          // Pages only refresh preference values on sync:pulled, not the full
+          // accounts/transactions/budget data. Queue a reload. If the app is
+          // currently visible we can reload now; if it's in the background we'll
+          // wait until the user brings it back to the foreground.
+          pendingReloadRef.current = true
+          if (visibleRef.current) {
+            setTimeout(() => {
+              if (pendingReloadRef.current) {
+                pendingReloadRef.current = false
+                window.location.reload()
+              }
+            }, RELOAD_DELAY_MS)
+          }
         } else if (result.action !== 'none') {
           console.log('[AutoSync]', result.action, result.message)
         } else {
@@ -115,6 +132,10 @@ export function useAutoSync(locked: boolean) {
 
     const handleVisibilityChange = () => {
       visibleRef.current = document.visibilityState === 'visible'
+      if (visibleRef.current && pendingReloadRef.current) {
+        pendingReloadRef.current = false
+        window.location.reload()
+      }
     }
 
     window.addEventListener('sync:dirty', handleDirty)

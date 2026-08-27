@@ -36,7 +36,6 @@ const BACKUP_FILE_NAME = 'cloud-backup.budgetbackup'
 const isTreePath = (path: string): boolean => path.startsWith('treefile:')
 
 type PasswordModalContext = 'create' | 'verify-existing' | 'create-new' | 'sync-password'
-type SyncMode = 'push' | 'pull'
 
 const CloudSyncSettings: React.FC = () => {
   const [settings, setSettings] = useState<{
@@ -56,10 +55,9 @@ const CloudSyncSettings: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [passwordModalContext, setPasswordModalContext] = useState<PasswordModalContext>('create')
-  const [pendingAction, setPendingAction] = useState<'refresh-sync' | 'force-pull' | 'force-push' | 'manual-sync' | 'save-password' | 'verify-file' | null>(null)
+  const [pendingAction, setPendingAction] = useState<'force-pull' | 'force-push' | 'save-password' | 'verify-file' | null>(null)
   const [showAppLock, setShowAppLock] = useState(false)
   const [appLockAction, setAppLockAction] = useState<'save-password' | 'verify-file' | 'unlock-sync'>('save-password')
-  const [syncMode, setSyncMode] = useState<SyncMode>('pull')
   const [cloudFileInfo, setCloudFileInfo] = useState<{ modifiedAt: string | null; size: number | null }>({ modifiedAt: null, size: null })
   const [fileMissing, setFileMissing] = useState(false)
   const [fileStatus, setFileStatus] = useState<string>('')
@@ -678,46 +676,14 @@ const CloudSyncSettings: React.FC = () => {
     }
   }, [appLockAction, pendingAction])
 
-  const doSync = async () => {
-    if (!settings.filePath) {
-      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
-      return
-    }
-
-    // The app's PIN/biometric lock already gates access to the app; do not prompt
-    // again for the backup password here. If the session passphrase isn't cached
-    // (e.g. after a cold start), silently try to recover it from secure storage.
-    if (!getSessionPassphrase() && (await hasStoredPassphrase())) {
-      await unlockPassphraseFromSecureStorage()
-    }
-
-    await executeManualSync()
-  }
-
-  const executeManualSync = async () => {
-    if (!settings.filePath) {
-      setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
-      return
-    }
-    setLoading(true)
-    setMessage(null)
-    try {
-      if (syncMode === 'push') {
-        const r = await pushCloudBackup(settings.filePath)
-        setMessage({ type: 'success', text: `Pushed to cloud (${r.size} bytes).` })
-      } else {
-        const r = await pullCloudBackup(settings.filePath)
-        const counts = Object.entries(r.summary)
-          .map(([table, count]) => `${table.replace(/_/g, ' ')}: ${count}`)
-          .join(', ')
-        setMessage({ type: 'success', text: `Pulled from cloud: ${counts}.` })
-      }
-      await loadSettings()
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
-    } finally {
-      setLoading(false)
-    }
+  const promptForSyncPassword = (action: 'force-pull' | 'force-push') => {
+    setPasswordModalContext('sync-password')
+    setPendingAction(action)
+    setShowPasswordModal(true)
+    setPassword('')
+    setConfirmPassword('')
+    setSetupPin('')
+    setVerifyError(false)
   }
 
   const handleForcePull = async () => {
@@ -727,7 +693,14 @@ const CloudSyncSettings: React.FC = () => {
     }
 
     if (!getSessionPassphrase() && (await hasStoredPassphrase())) {
-      await unlockPassphraseFromSecureStorage()
+      const recovered = await unlockPassphraseFromSecureStorage()
+      if (!recovered) {
+        promptForSyncPassword('force-pull')
+        return
+      }
+    } else if (!getSessionPassphrase()) {
+      promptForSyncPassword('force-pull')
+      return
     }
 
     await runForcePull()
@@ -771,7 +744,14 @@ const CloudSyncSettings: React.FC = () => {
     }
 
     if (!getSessionPassphrase() && (await hasStoredPassphrase())) {
-      await unlockPassphraseFromSecureStorage()
+      const recovered = await unlockPassphraseFromSecureStorage()
+      if (!recovered) {
+        promptForSyncPassword('force-push')
+        return
+      }
+    } else if (!getSessionPassphrase()) {
+      promptForSyncPassword('force-push')
+      return
     }
 
     await runForcePush()
@@ -834,7 +814,7 @@ const CloudSyncSettings: React.FC = () => {
     setSetupPin('')
     setVerifyError(false)
     setPasswordModalContext('sync-password')
-    setPendingAction('manual-sync')
+    setPendingAction(null)
     setShowPasswordModal(true)
   }
 
@@ -891,8 +871,6 @@ const CloudSyncSettings: React.FC = () => {
         await runForcePull()
       } else if (pendingAction === 'force-push') {
         await runForcePush()
-      } else if (pendingAction === 'manual-sync') {
-        await executeManualSync()
       }
 
       // Sync succeeded — persist the passphrase using secure storage so that
@@ -1086,41 +1064,6 @@ const CloudSyncSettings: React.FC = () => {
             </div>
           )}
 
-          {/* Push / Pull Toggle + Sync Now (Manual mode only, hidden when file missing) */}
-          {settings.syncMode === 'manual' && !fileMissing && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-                <span className="text-sm font-medium text-gray-700">
-                  {syncMode === 'pull' ? 'Pull from Cloud' : 'Push to Cloud'}
-                </span>
-                <button
-                  onClick={() => setSyncMode(syncMode === 'pull' ? 'push' : 'pull')}
-                  className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors bg-blue-600"
-                  title="Toggle Push / Pull"
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      syncMode === 'pull' ? 'translate-x-1' : 'translate-x-6'
-                    }`}
-                  />
-                </button>
-              </div>
-
-              <button
-                onClick={doSync}
-                disabled={loading || !canSync}
-                className="w-full px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Syncing...' : 'Sync Now'}
-              </button>
-
-              {!canSync && (
-                <p className="text-xs text-gray-500 text-center">
-                  {!settings.filePath ? 'Set a backup file path to enable sync.' : 'Set a password to enable sync.'}
-                </p>
-              )}
-            </div>
-          )}
 
           {/* Reset / Re-enter password */}
           <div className="flex justify-end gap-4">

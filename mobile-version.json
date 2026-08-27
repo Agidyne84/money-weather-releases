@@ -3,5 +3,5 @@
     "versionCode":  10195,
     "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.95/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Fix pull-to-refresh password prompt by recovering the cloud sync passphrase from secure storage before pulling. Force pull from cloud now reloads the app so the new data is visible without switching tabs. Also fixes the mobile APK versionCode so OTA updates install correctly."
+    "releaseNotes":  "Remove redundant manual Push/Pull toggle and Sync Now controls. Force Pull/Push now prompt for the backup password only when needed and reload the app after a pull. Pull-to-refresh now runs a full two-way sync (pushes when local is newer). Hardened mobile import guard to prevent accidental data loss if the cloud backup cannot be verified."
 }
