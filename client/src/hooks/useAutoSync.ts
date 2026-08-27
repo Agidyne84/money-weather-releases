@@ -6,6 +6,7 @@ import {
 } from '../services/syncEngine'
 import { getSessionPassphrase, hasStoredPassphrase, unlockPassphraseFromSecureStorage } from '../services/securePassphrase'
 import { isDirty } from '../services/dirtyTracker'
+import { closeDatabase } from '../services/database/mobileDb'
 
 const POLL_INTERVAL = 15000 // 15 seconds normal
 const DIRTY_POLL_INTERVAL = 2000 // 2 seconds when local data is dirty
@@ -89,9 +90,12 @@ export function useAutoSync(locked: boolean) {
           // wait until the user brings it back to the foreground.
           pendingReloadRef.current = true
           if (visibleRef.current) {
-            setTimeout(() => {
+            setTimeout(async () => {
               if (pendingReloadRef.current) {
                 pendingReloadRef.current = false
+                // Close the native DB before tearing down the webview so the next
+                // page load opens a fresh connection instead of reusing a stale one.
+                try { await closeDatabase() } catch (e) { console.warn('[AutoSync] closeDatabase before reload failed:', e) }
                 window.location.reload()
               }
             }, RELOAD_DELAY_MS)
@@ -143,10 +147,12 @@ export function useAutoSync(locked: boolean) {
       }, IMMEDIATE_SYNC_DEBOUNCE)
     }
 
-    const handleVisibilityChange = () => {
+    const handleVisibilityChange = async () => {
       visibleRef.current = document.visibilityState === 'visible'
       if (visibleRef.current && pendingReloadRef.current) {
         pendingReloadRef.current = false
+        // Close the native DB before the reload so the reloaded page gets a fresh connection.
+        try { await closeDatabase() } catch (e) { console.warn('[AutoSync] closeDatabase before visibility reload failed:', e) }
         window.location.reload()
       }
     }

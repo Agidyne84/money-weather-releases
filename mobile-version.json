@@ -1,7 +1,7 @@
 {
-    "version":  "1.1.99",
-    "versionCode":  10199,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.99/app-release.apk",
+    "version":  "1.1.100",
+    "versionCode":  101100,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.100/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Try every stored SMK candidate to recover the cloud sync passphrase, not just the OS secure store. Auto-sync now runs immediately on mount and auto mode no longer shows the conflict dialog. Mobile import now closes the database after writing so pulled data is visible after sync."
+    "releaseNotes":  "Open any retrieved SQLite connection before use to avoid stale wrappers after webview reloads. Close the native database before all cloud sync page reloads so the reloaded app gets a fresh connection and pulled data is visible immediately."
 }

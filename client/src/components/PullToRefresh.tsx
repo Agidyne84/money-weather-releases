@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { getCloudSyncSettings, performSync, refreshLocalPreferences } from '../services/syncEngine'
 import { getSessionPassphrase, hasStoredPassphrase, unlockPassphraseFromSecureStorage } from '../services/securePassphrase'
+import { closeDatabase } from '../services/database/mobileDb'
 
 const isNative = Capacitor.isNativePlatform()
 const PULL_THRESHOLD = 80 // px
@@ -66,9 +67,13 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, onRefresh }) =>
         // Reload the app so every page re-reads the freshly pulled data. Individual
         // pages only listened for 'sync:pulled' to refresh a few preference values,
         // not the full accounts/transactions/budget data, so pulled changes were
-        // invisible until the user manually navigated away and back. Wait for the
-        // native SQLite commit to finish so the reloaded page sees the new data.
-        setTimeout(() => window.location.reload(), 1200)
+        // invisible until the user manually navigated away and back. Close the native
+        // DB before tearing down the webview so the reloaded page opens a fresh
+        // connection and actually sees the pulled data.
+        setTimeout(async () => {
+          try { await closeDatabase() } catch (e) { console.warn('[PullToRefresh] closeDatabase before reload failed:', e) }
+          window.location.reload()
+        }, 1200)
       } else if (result.action === 'pushed') {
         setMessage('Pushed local data to cloud')
       } else if (result.action === 'error') {

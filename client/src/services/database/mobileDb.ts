@@ -178,6 +178,19 @@ async function doGetConnection(): Promise<SQLiteDBConnection> {
   const isConn = await sqliteConnection.isConnection(DB_NAME, false)
   if (isConn.result) {
     dbConnection = await sqliteConnection.retrieveConnection(DB_NAME, false)
+    // isConnection()/retrieveConnection() can return a stale wrapper (especially
+    // after a webview reload). Calling open() is a no-op for an already-open
+    // connection, but guarantees a fresh connection if the wrapper was closed.
+    try {
+      await dbConnection.open()
+    } catch (openErr: any) {
+      const msg = String(openErr?.message ?? openErr)
+      if (msg.toLowerCase().includes('already open')) {
+        console.log('[Mobile DB] Retrieved connection is already open')
+      } else {
+        console.warn('[Mobile DB] Failed to open retrieved connection:', openErr)
+      }
+    }
   } else {
     dbConnection = await sqliteConnection.createConnection(
       DB_NAME,

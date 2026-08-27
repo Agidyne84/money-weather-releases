@@ -28,6 +28,7 @@ import {
   unlockPassphraseFromSecureStorage,
 } from '../services/securePassphrase'
 import { verifyBackupPassword, base64ToArrayBuffer } from '../utils/mobileBackup'
+import { closeDatabase } from '../services/database/mobileDb'
 import CloudFile, { type CloudFolderFile } from '../plugins/CloudFilePlugin'
 import AppLock from './AppLock'
 
@@ -723,9 +724,13 @@ const CloudSyncSettings: React.FC = () => {
         setMessage({ type: 'success', text: 'Force pull complete. Data restored from cloud backup.' })
         // Reload the app so every page re-reads the freshly pulled data, just like
         // pull-to-refresh does. Pages only listen for sync:pulled to refresh a few
-        // preference values, not the full accounts/transactions/budget data. Give
-        // native SQLite extra time to fully commit before the page is torn down.
-        setTimeout(() => window.location.reload(), 1200)
+        // preference values, not the full accounts/transactions/budget data. Close
+        // the native DB before tearing down the webview so the reloaded page opens
+        // a fresh connection and actually sees the pulled data.
+        setTimeout(async () => {
+          try { await closeDatabase() } catch (e) { console.warn('[CloudSync] closeDatabase before reload failed:', e) }
+          window.location.reload()
+        }, 1200)
       } else {
         setMessage({ type: 'error', text: 'Force pull failed.' })
       }
