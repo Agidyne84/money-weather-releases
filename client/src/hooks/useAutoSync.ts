@@ -4,14 +4,14 @@ import {
   checkCloudSyncStatus,
   performSync,
 } from '../services/syncEngine'
-import { getSessionPassphrase, hasStoredPassphrase } from '../services/securePassphrase'
+import { getSessionPassphrase, hasStoredPassphrase, unlockPassphraseFromSecureStorage } from '../services/securePassphrase'
 import { isDirty } from '../services/dirtyTracker'
 
 const POLL_INTERVAL = 15000 // 15 seconds normal
 const DIRTY_POLL_INTERVAL = 2000 // 2 seconds when local data is dirty
 const BACKGROUND_POLL_INTERVAL = 60000 // 60 seconds when tab is hidden
 const IMMEDIATE_SYNC_DEBOUNCE = 100 // 100ms debounce after a local change
-const RELOAD_DELAY_MS = 500 // brief delay before auto-reloading after a background pull
+const RELOAD_DELAY_MS = 1200 // brief delay before auto-reloading after a background pull
 
 /**
  * Background auto-sync hook.
@@ -55,8 +55,15 @@ export function useAutoSync(locked: boolean) {
       // encryption password (a valid, supported unencrypted sync mode), proceed —
       // pushCloudBackup/pullCloudBackup handle an undefined passphrase gracefully.
       if (!getSessionPassphrase() && (await hasStoredPassphrase())) {
-        console.log('[AutoSync] Backup password configured but not unlocked this session, skipping sync')
-        return
+        // Try to recover the passphrase from the OS secure store / desktop fallback.
+        // Without this, every background sync on an already-unlocked app could
+        // surface a password prompt if the webview was re-created.
+        const recovered = await unlockPassphraseFromSecureStorage()
+        if (!recovered) {
+          console.log('[AutoSync] Backup password configured but not recovered, skipping sync')
+          return
+        }
+        console.log('[AutoSync] Recovered session passphrase from secure storage')
       }
 
       let status: 'newer' | 'older' | 'same' | 'missing' | 'error'

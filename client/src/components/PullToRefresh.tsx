@@ -66,8 +66,9 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, onRefresh }) =>
         // Reload the app so every page re-reads the freshly pulled data. Individual
         // pages only listened for 'sync:pulled' to refresh a few preference values,
         // not the full accounts/transactions/budget data, so pulled changes were
-        // invisible until the user manually navigated away and back.
-        setTimeout(() => window.location.reload(), 400)
+        // invisible until the user manually navigated away and back. Wait for the
+        // native SQLite commit to finish so the reloaded page sees the new data.
+        setTimeout(() => window.location.reload(), 1200)
       } else if (result.action === 'pushed') {
         setMessage('Pushed local data to cloud')
       } else if (result.action === 'error') {

@@ -264,10 +264,12 @@ export async function importMobileBackup(fileBuffer: ArrayBuffer, passphrase?: s
     const incomingAccounts = envelope.tables.accounts.length
     const incomingTransactions = envelope.tables.transactions.length
     console.log('[MobileBackup] Wipe-guard check — existing:', { existingAccounts, existingTransactions }, 'incoming:', { incomingAccounts, incomingTransactions })
+    // Refuse to overwrite any local data with an empty backup. Even a single
+    // account or transaction on this device is worth protecting.
     if (existingAccounts > 0 && incomingAccounts === 0) {
       throw new Error(`Refusing to import: the cloud backup has 0 accounts but this device has ${existingAccounts}. This looks like a stale or corrupted backup file — use Force Push if you intended to overwrite the cloud backup with this device's data instead.`)
     }
-    if (existingTransactions >= 5 && incomingTransactions === 0) {
+    if (existingTransactions > 0 && incomingTransactions === 0) {
       throw new Error(`Refusing to import: the cloud backup has 0 transactions but this device has ${existingTransactions}. This looks like a stale or corrupted backup file — use Force Push if you intended to overwrite the cloud backup with this device's data instead.`)
     }
   } catch (guardError) {

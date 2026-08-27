@@ -1,7 +1,7 @@
 {
-    "version":  "1.1.96",
-    "versionCode":  10196,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.96/app-release.apk",
+    "version":  "1.1.97",
+    "versionCode":  10197,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.97/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Remove redundant manual Push/Pull toggle and Sync Now controls. Force Pull/Push now prompt for the backup password only when needed and reload the app after a pull. Pull-to-refresh now runs a full two-way sync (pushes when local is newer). Hardened mobile import guard to prevent accidental data loss if the cloud backup cannot be verified."
+    "releaseNotes":  "Add SMK fallback in Preferences so the cloud sync passphrase can be recovered on desktop and when the OS secure store is unavailable. Auto-sync now tries passphrase recovery instead of skipping. Tightened wipe-guard to refuse importing a backup with zero transactions when any local transactions exist. Longer reload delay after pull to ensure mobile SQLite commits before the UI reloads."
 }

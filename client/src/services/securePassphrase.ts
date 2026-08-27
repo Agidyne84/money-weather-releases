@@ -186,6 +186,17 @@ async function storeSMKSecurely(smk: ArrayBuffer): Promise<void> {
   } catch (err) {
     console.warn('[securePassphrase] Could not store SMK in secure storage:', err)
   }
+  // Also keep a fallback copy in Capacitor Preferences. The OS secure store
+  // (especially on Electron desktop) is not always readable on the next launch,
+  // and without the SMK the passphrase cannot be recovered after the webview
+  // restarts. Preferences is less secure but keeps sync usable on desktop.
+  try {
+    const b64 = arrayBufferToBase64(smk)
+    await Preferences.set({ key: SMK_SECURE_KEY, value: b64 })
+    console.log('[securePassphrase] SMK stored in Preferences fallback, length:', b64.length)
+  } catch (err) {
+    console.warn('[securePassphrase] Could not store SMK in Preferences fallback:', err)
+  }
 }
 
 async function getSMKSecurely(): Promise<ArrayBuffer | null> {
@@ -198,12 +209,27 @@ async function getSMKSecurely(): Promise<ArrayBuffer | null> {
   } catch (err) {
     console.warn('[securePassphrase] Could not retrieve SMK from secure storage:', err)
   }
+  // Fallback to Preferences for desktop or if the OS secure store is unavailable
+  try {
+    const { value } = await Preferences.get({ key: SMK_SECURE_KEY })
+    console.log('[securePassphrase] Preferences.get result type:', typeof value, 'length:', typeof value === 'string' ? value.length : 0)
+    if (value && typeof value === 'string') {
+      return base64ToArrayBuffer(value)
+    }
+  } catch (err) {
+    console.warn('[securePassphrase] Could not retrieve SMK from Preferences fallback:', err)
+  }
   return null
 }
 
 async function removeSMKSecurely(): Promise<void> {
   try {
     await SecureStorage.remove(SMK_SECURE_KEY)
+  } catch {
+    // ignore
+  }
+  try {
+    await Preferences.remove({ key: SMK_SECURE_KEY })
   } catch {
     // ignore
   }
