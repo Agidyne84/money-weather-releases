@@ -27,6 +27,7 @@ import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 
 @CapacitorPlugin(name = "CloudFile")
 public class CloudFilePlugin extends Plugin {
@@ -529,52 +530,77 @@ public class CloudFilePlugin extends Plugin {
 
         Uri uri = Uri.parse(uriString);
         ContentResolver resolver = getContext().getContentResolver();
+        byte[] bytes = Base64.decode(data, Base64.NO_WRAP);
 
-        // Use "wt" (write + truncate) so the file is fully replaced, avoiding leftover
-        // bytes from a previously larger file. Use NO_WRAP base64 consistently with readFile.
-        try (ParcelFileDescriptor pfd = resolver.openFileDescriptor(uri, "wt")) {
-            if (pfd == null) {
-                call.reject("Could not open file descriptor for URI");
+        // First attempt: ContentResolver.openOutputStream. Several cloud providers
+        // (notably OneDrive) implement this path more reliably than openFileDescriptor.
+        boolean written = false;
+        Exception lastError = null;
+        try (OutputStream os = resolver.openOutputStream(uri, "wt")) {
+            if (os == null) {
+                throw new IOException("openOutputStream returned null");
+            }
+            os.write(bytes);
+            os.flush();
+            if (os instanceof FileOutputStream) {
+                try {
+                    ((FileOutputStream) os).getFD().sync();
+                    Log.d(TAG, "writeFile openOutputStream uri=" + uriString + " bytes=" + bytes.length + " fdSync=true");
+                } catch (java.io.SyncFailedException e) {
+                    Log.w(TAG, "writeFile openOutputStream fd.sync not supported: " + e.getMessage());
+                }
+            } else {
+                Log.d(TAG, "writeFile openOutputStream uri=" + uriString + " bytes=" + bytes.length + " (no fd sync)");
+            }
+            written = true;
+        } catch (Exception e) {
+            Log.w(TAG, "openOutputStream write failed, will try openFileDescriptor fallback: " + e.getMessage());
+            lastError = e;
+        }
+
+        // Fallback: use a file descriptor if the provider does not support
+        // openOutputStream or the stream path failed.
+        if (!written) {
+            try (ParcelFileDescriptor pfd = resolver.openFileDescriptor(uri, "wt")) {
+                if (pfd == null) {
+                    call.reject("Could not open file descriptor for URI");
+                    return;
+                }
+
+                FileOutputStream out = new FileOutputStream(pfd.getFileDescriptor());
+                // Explicitly truncate via the file channel before writing. This is a documented
+                // Android SAF issue: some providers do not reliably honor the "wt" truncate mode.
+                try {
+                    out.getChannel().truncate(0);
+                } catch (IOException e) {
+                    Log.w(TAG, "writeFile explicit truncate(0) failed (continuing): " + e.getMessage());
+                }
+                out.write(bytes);
+                out.flush();
+                // Force the kernel to flush the bytes to the underlying storage before closing.
+                try {
+                    out.getFD().sync();
+                    Log.d(TAG, "writeFile openFileDescriptor uri=" + uriString + " bytes=" + bytes.length + " fdSync=true");
+                } catch (java.io.SyncFailedException e) {
+                    Log.w(TAG, "writeFile fd.sync not supported by provider: " + e.getMessage());
+                }
+                out.close();
+            } catch (SecurityException e) {
+                Log.e(TAG, "Permission denied writing URI: " + uriString, e);
+                call.reject("Permission denied: " + e.getMessage());
+                return;
+            } catch (IOException e) {
+                String fallbackMsg = e.getMessage() != null ? e.getMessage() : (lastError != null ? lastError.getMessage() : "write failed");
+                Log.e(TAG, "IO error writing URI: " + uriString, e);
+                call.reject("IO error: " + fallbackMsg);
                 return;
             }
-
-            byte[] bytes = Base64.decode(data, Base64.NO_WRAP);
-            FileOutputStream out = new FileOutputStream(pfd.getFileDescriptor());
-            // Explicitly truncate via the file channel before writing. This is a documented
-            // Android SAF issue: some providers (notably OneDrive) do not reliably honor the
-            // "wt" truncate mode, leaving trailing bytes from a previously larger file, or
-            // otherwise mishandling the overwrite. An explicit channel-level truncate(0) is
-            // the confirmed workaround and is safe to call even for providers that already
-            // truncate correctly.
-            try {
-                out.getChannel().truncate(0);
-            } catch (IOException e) {
-                Log.w(TAG, "writeFile explicit truncate(0) failed (continuing): " + e.getMessage());
-            }
-            out.write(bytes);
-            out.flush();
-            // Force the kernel to flush the bytes to the underlying storage before closing.
-            // Without this, cloud-backed providers can report a successful write while still
-            // holding the new data in a local cache that is never uploaded.
-            try {
-                out.getFD().sync();
-                Log.d(TAG, "writeFile uri=" + uriString + " bytes=" + bytes.length + " fdSync=true");
-            } catch (java.io.SyncFailedException e) {
-                Log.w(TAG, "writeFile fd.sync not supported by provider: " + e.getMessage());
-            }
-            out.close();
-
-            JSObject result = new JSObject();
-            result.put("success", true);
-            result.put("bytesWritten", bytes.length);
-            call.resolve(result);
-        } catch (SecurityException e) {
-            Log.e(TAG, "Permission denied writing URI: " + uriString, e);
-            call.reject("Permission denied: " + e.getMessage());
-        } catch (IOException e) {
-            Log.e(TAG, "IO error writing URI: " + uriString, e);
-            call.reject("IO error: " + e.getMessage());
         }
+
+        JSObject result = new JSObject();
+        result.put("success", true);
+        result.put("bytesWritten", bytes.length);
+        call.resolve(result);
     }
 
     private String getFileName(Uri uri) {

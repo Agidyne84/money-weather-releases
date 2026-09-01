@@ -589,31 +589,18 @@ const CloudSyncSettings: React.FC = () => {
     }
   }, [appLockAction, pendingAction])
 
-  const promptForSyncPassword = (action: 'force-pull' | 'force-push') => {
-    setPasswordModalContext('sync-password')
-    setPendingAction(action)
-    setShowPasswordModal(true)
-    setPassword('')
-    setConfirmPassword('')
-    setSetupPin('')
-    setVerifyError(false)
-  }
-
   const handleForcePull = async () => {
     if (!settings.filePath) {
       setMessage({ type: 'error', text: 'Please set a cloud backup file path first.' })
       return
     }
 
+    // Recover the passphrase if it isn't already in session memory, then run the
+    // force pull. If recovery is not possible, pullCloudBackup will surface a real
+    // error instead of leaving the user in a password prompt that mirrors the
+    // pull-to-refresh behavior.
     if (!getSessionPassphrase() && (await hasStoredPassphrase())) {
-      const recovered = await unlockPassphraseFromSecureStorage()
-      if (!recovered) {
-        promptForSyncPassword('force-pull')
-        return
-      }
-    } else if (!getSessionPassphrase()) {
-      promptForSyncPassword('force-pull')
-      return
+      await unlockPassphraseFromSecureStorage()
     }
 
     await runForcePull()
@@ -661,15 +648,11 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
+    // Recover the passphrase if it isn't already in session memory, then run the
+    // force push. pushCloudBackup will prompt or error if the passphrase is still
+    // not available; the Settings page itself should not block on a manual prompt.
     if (!getSessionPassphrase() && (await hasStoredPassphrase())) {
-      const recovered = await unlockPassphraseFromSecureStorage()
-      if (!recovered) {
-        promptForSyncPassword('force-push')
-        return
-      }
-    } else if (!getSessionPassphrase()) {
-      promptForSyncPassword('force-push')
-      return
+      await unlockPassphraseFromSecureStorage()
     }
 
     await runForcePush()
