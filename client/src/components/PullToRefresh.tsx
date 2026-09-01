@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { Capacitor } from '@capacitor/core'
-import { getCloudSyncSettings, performSync, refreshLocalPreferences } from '../services/syncEngine'
+import { getCloudSyncSettings, pullCloudBackup, refreshLocalPreferences } from '../services/syncEngine'
 import { getSessionPassphrase, hasStoredPassphrase, unlockPassphraseFromSecureStorage } from '../services/securePassphrase'
 import { closeDatabase } from '../services/database/mobileDb'
 
@@ -46,10 +46,10 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, onRefresh }) =>
         setMessage('Cloud sync is not enabled')
         return
       }
-      // Run a full bidirectional sync from the pull gesture. If the cloud is newer,
-      // we pull. If local is newer/dirty, we push. This matches the auto-sync logic
-      // and fixes the problem where pull-to-refresh only pulled even when the local
-      // data was newer than the cloud backup.
+      // Pull-to-refresh is explicitly a force pull from cloud. It should always
+      // restore the latest cloud backup, not skip because local changes have not
+      // been pushed. If local changes need to be preserved the user should force
+      // push from Settings first.
 
       // Recover the passphrase from secure storage if it isn't already in session memory.
       // Without this, a sync shortly after app unlock can fail with a password prompt
@@ -59,8 +59,8 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, onRefresh }) =>
         console.log('[PullToRefresh] Passphrase recovery from secure storage:', recovered)
       }
 
-      const result = await performSync(settings.filePath)
-      if (result.action === 'pulled') {
+      const result = await pullCloudBackup(settings.filePath)
+      if (result.success) {
         await refreshLocalPreferences()
         window.dispatchEvent(new CustomEvent('sync:pulled', { detail: result }))
         setMessage('Pulled latest backup from cloud')
@@ -74,12 +74,8 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, onRefresh }) =>
           try { await closeDatabase() } catch (e) { console.warn('[PullToRefresh] closeDatabase before reload failed:', e) }
           window.location.reload()
         }, 1200)
-      } else if (result.action === 'pushed') {
-        setMessage('Pushed local data to cloud')
-      } else if (result.action === 'error') {
-        setMessage(result.message)
       } else {
-        setMessage('Already up to date')
+        setMessage('Pull failed')
       }
     } catch (err) {
       console.error('[PullToRefresh] refresh failed:', err)

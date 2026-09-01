@@ -14,7 +14,6 @@ import {
   pullCloudBackup,
   pushCloudBackup,
   refreshLocalPreferences,
-  encodeTreeFileRef,
   type CloudSyncMode,
 } from '../services/syncEngine'
 import {
@@ -29,7 +28,7 @@ import {
 } from '../services/securePassphrase'
 import { verifyBackupPassword, base64ToArrayBuffer } from '../utils/mobileBackup'
 import { closeDatabase } from '../services/database/mobileDb'
-import CloudFile, { type CloudFolderFile } from '../plugins/CloudFilePlugin'
+import CloudFile from '../plugins/CloudFilePlugin'
 import AppLock from './AppLock'
 
 const isNative = Capacitor.isNativePlatform()
@@ -71,10 +70,6 @@ const CloudSyncSettings: React.FC = () => {
   const [fileWarning, setFileWarning] = useState<string | null>(null)
   const [setupPin, setSetupPin] = useState('')
 
-  // Mobile folder-first file selection state
-  const [showFolderFilePicker, setShowFolderFilePicker] = useState(false)
-  const [folderFiles, setFolderFiles] = useState<CloudFolderFile[]>([])
-  const [folderUri, setFolderUri] = useState<string | null>(null)
 
   const displayFilePath = (path: string | null, displayName?: string | null) => {
     if (!path) return 'Not set'
@@ -241,43 +236,12 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Mobile: prefer the folder picker (SAF tree) so all reads/writes can use the
-    // safer create-temp-then-rename strategy and users can pick among multiple
-    // .budgetbackup files. Some providers (OneDrive) do not expose
-    // ACTION_OPEN_DOCUMENT_TREE, so fall back to a single-file picker if needed.
+    // Mobile: single-file picker works with all providers (OneDrive, Google Drive,
+    // Dropbox, local storage) and lets the user pick a specific backup file.
     setLoading(true)
     setMessage(null)
     try {
-      try {
-        const folder = await CloudFile.pickFolder()
-        console.log('[CloudSync] pickFolder result:', folder.uri)
-
-        const list = await CloudFile.listFilesInFolder({ treeUri: folder.uri, extension: '.budgetbackup' })
-        console.log('[CloudSync] listFilesInFolder found:', list.files.length, 'files')
-
-        if (list.files.length === 0) {
-          setMessage({
-            type: 'error',
-            text: 'No .budgetbackup files found in this folder. Create an empty backup file in your cloud app first, then select it here.',
-          })
-          return
-        }
-
-        setFolderUri(folder.uri)
-        setFolderFiles(list.files)
-        setShowFolderFilePicker(true)
-        return
-      } catch (folderErr) {
-        const folderMsg = folderErr instanceof Error ? folderErr.message : String(folderErr)
-        if (folderMsg === 'User cancelled') {
-          return
-        }
-        console.warn('[CloudSync] Folder picker unavailable/failed, falling back to file picker:', folderMsg)
-      }
-
-      // Fallback: single-file picker (works with OneDrive and other providers that
-      // do not support folder access). Writes use the direct content-URI path.
-      await runLegacyMobileFilePicker()
+      await runMobileFilePicker()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       if (msg !== 'User cancelled') {
@@ -289,7 +253,7 @@ const CloudSyncSettings: React.FC = () => {
     }
   }
 
-  const runLegacyMobileFilePicker = async () => {
+  const runMobileFilePicker = async () => {
     // Persist a marker BEFORE opening the picker. If Android kills our activity
     // while the picker is open, we'll recover on next mount.
     await Preferences.set({
@@ -334,45 +298,6 @@ const CloudSyncSettings: React.FC = () => {
     setShowPasswordModal(true)
   }
 
-  const handleSelectFolderFile = async (file: CloudFolderFile) => {
-    if (!folderUri) return
-    setShowFolderFilePicker(false)
-    setLoading(true)
-    setMessage(null)
-    try {
-      const treeFilePath = encodeTreeFileRef({ treeUri: folderUri, fileName: file.name })
-      console.log('[CloudSync] Selected folder file:', file.name, 'path:', treeFilePath)
-
-      const isEmpty = file.size === 0
-      const warning = isEmpty
-        ? `Selected file "${file.name}" is empty. Create a new backup password to start syncing.`
-        : `Selected backup file "${file.name}". Enter its password to verify ownership.`
-      setFileWarning(warning)
-
-      await Preferences.set({
-        key: 'cloud_sync_pending_verify',
-        value: JSON.stringify({ uri: treeFilePath, warning, stage: isEmpty ? 'create-new' : 'verify', name: file.name }),
-      })
-
-      setPendingFileBuffer(null)
-      setPendingFileName(treeFilePath)
-      setPendingDisplayName(file.name)
-      setPassword('')
-      setConfirmPassword('')
-      setSetupPin('')
-      setVerifyError(false)
-      setPasswordModalContext(isEmpty ? 'create-new' : 'verify-existing')
-      setShowPasswordModal(true)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error('[CloudSync] Select folder file failed:', err)
-      setMessage({ type: 'error', text: msg })
-      await Preferences.remove({ key: 'cloud_sync_pending_verify' })
-    } finally {
-      setLoading(false)
-    }
-  }
-
   /* ─── Create New File ─── */
   const handleCreateNew = async () => {
     if (!isNative) {
@@ -411,39 +336,26 @@ const CloudSyncSettings: React.FC = () => {
       return
     }
 
-    // Mobile: pick a folder (SAF tree) to create the backup file inside, so pushes
-    // can use the safer write-then-swap strategy that avoids duplicate files.
-    // NOTE: this only works with providers that support ACTION_OPEN_DOCUMENT_TREE
-    // (e.g. Google Drive, local device storage). OneDrive's Android app does not
-    // support folder access at all — OneDrive users should instead create an empty
-    // placeholder file in the OneDrive app first, then use "Select Existing" here.
+    // Mobile: create a new backup by selecting an empty .budgetbackup file that
+    // the user has already created in their cloud provider's app. This is the only
+    // reliable workflow that works with all providers (OneDrive, Google Drive, etc.).
     setLoading(true)
     setMessage(null)
     try {
-      const pick = await CloudFile.pickFolder()
-      console.log('[CloudSync] pickFolder (create new) result:', pick.uri)
-
-      const requestedName = window.prompt(
-        'Name this backup file (useful if you keep separate backups for different budgets/accounts):',
-        BACKUP_FILE_NAME
-      )
-      if (!requestedName) return
-      const fileName = requestedName.toLowerCase().endsWith('.budgetbackup')
-        ? requestedName
-        : `${requestedName}.budgetbackup`
-
-      const info = await CloudFile.getFileInfoInFolder({ treeUri: pick.uri, fileName })
-      if (info.exists) {
+      const pick = await CloudFile.pickFile({ mimeType: '*/*' })
+      const info = await CloudFile.getFileInfo({ uri: pick.uri })
+      const isEmpty = info.exists && info.size === 0
+      if (!isEmpty) {
         setMessage({
           type: 'error',
-          text: `A "${fileName}" backup already exists in that folder. Use "Select Existing" to use it instead.`,
+          text: `To create a new backup, select an empty .budgetbackup file. The chosen file is ${info.size} bytes.`,
         })
         return
       }
 
-      const treeFilePath = encodeTreeFileRef({ treeUri: pick.uri, fileName })
-      setPendingFileName(treeFilePath)
-      setPendingDisplayName(fileName)
+      setPendingFileName(pick.uri)
+      setPendingDisplayName(pick.name || null)
+      setFileWarning(null)
       setPasswordModalContext('create-new')
       setPassword('')
       setConfirmPassword('')
@@ -1020,9 +932,8 @@ const CloudSyncSettings: React.FC = () => {
 
             {isNative && (
               <p className="text-xs text-gray-400">
-                Both options ask for a folder first, then either pick an existing .budgetbackup file or create a new
-                one. This works reliably with OneDrive, Google Drive, Dropbox, and local storage, and supports keeping
-                multiple backup files in the same folder.
+                Pick an actual .budgetbackup file from any provider (OneDrive, Google Drive, Dropbox, local storage).
+                To create a new backup, make an empty .budgetbackup file in the provider's app first, then select it here.
               </p>
             )}
 
@@ -1091,43 +1002,6 @@ const CloudSyncSettings: React.FC = () => {
             </button>
           </div>
         </>
-      )}
-
-      {/* Folder File Picker Modal — choose an existing backup file inside a picked folder */}
-      {showFolderFilePicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">Select Backup File</h3>
-            <p className="text-sm text-gray-600">
-              Choose the .budgetbackup file you want to sync. Create an empty placeholder file in your cloud app first if you don't see it listed.
-            </p>
-            <div className="max-h-60 overflow-y-auto space-y-2">
-              {folderFiles.map((file) => (
-                <button
-                  key={file.name}
-                  onClick={() => handleSelectFolderFile(file)}
-                  className="w-full text-left px-3 py-2 border border-gray-200 rounded-md hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <p className="text-sm font-medium text-gray-900">{file.name}</p>
-                  <p className="text-xs text-gray-500">
-                    {file.size >= 0 ? `${file.size.toLocaleString()} bytes` : 'Size unknown'}
-                    {file.modifiedAt ? ` • ${new Date(file.modifiedAt).toLocaleString()}` : ''}
-                  </p>
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => {
-                setShowFolderFilePicker(false)
-                setFolderFiles([])
-                setFolderUri(null)
-              }}
-              className="w-full px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
       )}
 
       {/* Password Modal — context-aware */}

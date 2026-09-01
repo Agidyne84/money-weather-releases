@@ -341,13 +341,14 @@ async function mobilePush(filePath: string, passphrase?: string): Promise<{ succ
   // so a failed verification must NOT be reported as success.
   const result = await doWrite()
 
-  const VERIFY_DELAYS_MS = [500, 1000, 2000, 4000]
+  let afterInfo: CloudFileInfo = beforeInfo
+  const VERIFY_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 15000]
   let lastError = new Error('Cloud backup verification failed')
   for (let attempt = 1; attempt <= VERIFY_DELAYS_MS.length; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, VERIFY_DELAYS_MS[attempt - 1]))
 
-    const afterInfo = await getCloudFileInfo(filePath)
-    console.log('[SyncEngine] mobilePush post-write info:', { attempt, filePath, size: afterInfo.size, expected: data.length })
+    afterInfo = await getCloudFileInfo(filePath)
+    console.log('[SyncEngine] mobilePush post-write info:', { attempt, filePath, size: afterInfo.size, expected: data.length, beforeSize: beforeInfo.size })
     if (afterInfo.exists && afterInfo.size !== data.length) {
       lastError = new Error(`Cloud backup size mismatch (attempt ${attempt}): wrote ${data.length} bytes but provider reports ${afterInfo.size}`)
       console.warn('[SyncEngine] mobilePush post-write size mismatch (retrying verification):', { attempt, size: afterInfo.size, expected: data.length })
@@ -361,6 +362,13 @@ async function mobilePush(filePath: string, passphrase?: string): Promise<{ succ
     }
     lastError = new Error(`Cloud backup verification failed (attempt ${attempt}): expected hash ${hash.slice(0, 16)}, got ${readBackHash ? readBackHash.slice(0, 16) : 'null'}`)
     console.warn('[SyncEngine] mobilePush verification FAILED on attempt', attempt, lastError.message)
+  }
+
+  // If the cloud file still has its pre-write size and the new content is a different
+  // size, the provider never accepted the update. Surface a clear failure instead of
+  // silently pretending the push succeeded.
+  if (beforeInfo.exists && afterInfo.exists && afterInfo.size === beforeInfo.size && data.length !== beforeInfo.size) {
+    throw new Error(`Cloud provider did not accept the update. The backup is still ${beforeInfo.size} bytes. Try a different provider or storage location.`)
   }
 
   throw lastError
