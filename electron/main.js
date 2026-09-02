@@ -278,7 +278,8 @@ function createWindow() {
             }
             console.log('[Updater] Manual check triggered from menu');
             isCheckingForUpdate = true;
-            autoUpdater.checkForUpdates().catch((err) => {
+            manualUpdateCheck = true;
+            autoUpdater.checkForUpdatesAndDownload().catch((err) => {
               isCheckingForUpdate = false;
               const is404 = err.statusCode === 404 || err.message?.includes('404') || err.message?.includes('latest.yml');
               if (is404) {
@@ -374,6 +375,7 @@ ipcMain.handle('app:version', () => {
 // ── Auto-updater ─────────────────────────────────────────────────────────────
 let pendingInstallOnQuit = false;
 let isCheckingForUpdate = false;
+let manualUpdateCheck = false;
 
 function setupAutoUpdaterHandlers() {
   // Auto-download immediately when an update is found; install on quit
@@ -386,6 +388,7 @@ function setupAutoUpdaterHandlers() {
 
   autoUpdater.on('update-available', (info) => {
     isCheckingForUpdate = false;
+    manualUpdateCheck = false;
     console.log('[Updater] Update available:', info.version, '— downloading silently');
     // Show taskbar progress bar so user knows something is happening
     if (mainWindow) mainWindow.setProgressBar(2); // indeterminate
@@ -394,6 +397,18 @@ function setupAutoUpdaterHandlers() {
   autoUpdater.on('update-not-available', () => {
     isCheckingForUpdate = false;
     console.log('[Updater] App is up to date.');
+    // If the user explicitly clicked Help > Check for Updates, show a clear
+    // dialog instead of appearing to do nothing.
+    if (manualUpdateCheck && mainWindow) {
+      manualUpdateCheck = false;
+      dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: 'No Updates Available',
+        message: 'Money Weather is up to date.',
+        detail: `You are on the latest desktop version (${app.getVersion()}).`,
+        buttons: ['OK'],
+      }).catch(() => {});
+    }
   });
 
   autoUpdater.on('error', (err) => {
@@ -424,7 +439,10 @@ function setupAutoUpdaterHandlers() {
   const runUpdateCheck = () => {
     if (isCheckingForUpdate) return;
     isCheckingForUpdate = true;
-    autoUpdater.checkForUpdates().catch((err) => {
+    // checkForUpdatesAndDownload checks for a new version and, if one is
+    // available, starts the download. With autoDownload=true this is the only
+    // call needed for the automatic update flow to complete.
+    autoUpdater.checkForUpdatesAndDownload().catch((err) => {
       isCheckingForUpdate = false;
       const is404 = err.statusCode === 404 || err.message?.includes('404') || err.message?.includes('latest.yml');
       if (is404) {
