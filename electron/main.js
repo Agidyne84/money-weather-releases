@@ -279,7 +279,9 @@ function createWindow() {
             console.log('[Updater] Manual check triggered from menu');
             isCheckingForUpdate = true;
             manualUpdateCheck = true;
-            autoUpdater.checkForUpdatesAndDownload().catch((err) => {
+            // checkForUpdates respects autoDownload=true and will start the download
+            // automatically when an update is available.
+            autoUpdater.checkForUpdates().catch((err) => {
               isCheckingForUpdate = false;
               const is404 = err.statusCode === 404 || err.message?.includes('404') || err.message?.includes('latest.yml');
               if (is404) {
@@ -439,10 +441,10 @@ function setupAutoUpdaterHandlers() {
   const runUpdateCheck = () => {
     if (isCheckingForUpdate) return;
     isCheckingForUpdate = true;
-    // checkForUpdatesAndDownload checks for a new version and, if one is
-    // available, starts the download. With autoDownload=true this is the only
-    // call needed for the automatic update flow to complete.
-    autoUpdater.checkForUpdatesAndDownload().catch((err) => {
+    // checkForUpdates() is the standard electron-updater API. With
+    // autoDownload=true (set above), it starts downloading automatically as
+    // soon as an update is found.
+    autoUpdater.checkForUpdates().catch((err) => {
       isCheckingForUpdate = false;
       const is404 = err.statusCode === 404 || err.message?.includes('404') || err.message?.includes('latest.yml');
       if (is404) {
