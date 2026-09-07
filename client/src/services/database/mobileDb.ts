@@ -1,6 +1,7 @@
 // Mobile Database — Capacitor SQLite connection and initialization
 import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from '@capacitor-community/sqlite'
 import { Preferences } from '@capacitor/preferences'
+import { installChangeTracking, type SyncSchemaDb } from '../../../../shared/sync/changeLog'
 
 const DB_NAME = 'budget.db'
 let dbConnection: SQLiteDBConnection | null = null
@@ -246,7 +247,26 @@ async function doInitialize(): Promise<void> {
   await ensureColumn(db, 'historical_transactions', 'is_excluded', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'historical_transactions', 'bank_description', 'TEXT')
 
+  // Sync v2 change capture. Runs after every column migration so trigger payloads
+  // include all current columns.
+  await installChangeTracking(syncSchemaAdapter(db))
+
   await Preferences.set({ key: 'db_initialized', value: 'true' })
+}
+
+/** Adapt a Capacitor SQLite connection to the shared SyncSchemaDb surface. */
+export function syncSchemaAdapter(db: SQLiteDBConnection): SyncSchemaDb {
+  return {
+    run: async (sql, params = []) => {
+      // `run` executes exactly one statement, so multi-statement trigger bodies are
+      // passed through to SQLite intact (unlike `execute`, which may split on ';').
+      return db.run(sql, params as any[], false)
+    },
+    all: async (sql, params = []) => {
+      const result = await db.query(sql, params as any[])
+      return result.values || []
+    },
+  }
 }
 
 export async function initializeDatabase(): Promise<void> {

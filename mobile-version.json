@@ -1,7 +1,7 @@
 {
-    "version":  "1.1.102",
-    "versionCode":  10202,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.102/app-release.apk",
+    "version":  "1.1.104",
+    "versionCode":  10204,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.104/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Open any retrieved SQLite connection before use to avoid stale wrappers after webview reloads. Close the native database before all cloud sync page reloads so the reloaded app gets a fresh connection and pulled data is visible immediately."
+    "releaseNotes":  "Sync v2 groundwork: the app now keeps a local change log of every edit so the upcoming cloud sync can send only what changed. No user-facing changes yet."
 }

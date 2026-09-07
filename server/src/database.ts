@@ -1,6 +1,7 @@
 import sqlite3 from 'sqlite3'
 import { readFileSync, existsSync } from 'fs'
 import path from 'path'
+import { installChangeTracking } from '../../shared/sync/changeLog'
 
 // Resolve path to the server/database folder regardless of dist layout
 // (flat: dist/*.js  vs  nested: dist/server/src/*.js).
@@ -174,6 +175,10 @@ export class Database {
     if (nullIdRows.length > 0) {
       console.log(`Migration: fixed ${nullIdRows.length} transaction(s) with null id`)
     }
+
+    // 4) Sync v2 change capture. Must run after every column migration so the
+    //    trigger payloads include all current columns.
+    await installChangeTracking(this)
 
     console.log('Database initialized successfully')
   }
