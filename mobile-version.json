@@ -3,5 +3,5 @@
     "versionCode":  10206,
     "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.106/app-release.apk",
     "force":  false,
-    "releaseNotes":  "OneDrive sync on mobile now talks directly to Microsoft Graph (sign in via Settings > Cloud Sync > Connect OneDrive). Fixes pushes that appeared to succeed but never reached OneDrive."
+    "releaseNotes":  "OneDrive sync on mobile now talks directly to Microsoft Graph (sign in via Settings \u003e Cloud Sync \u003e Connect OneDrive). Fixes pushes that appeared to succeed but never reached OneDrive."
 }
