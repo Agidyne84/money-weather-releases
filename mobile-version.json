@@ -1,7 +1,7 @@
 {
-    "version":  "1.1.104",
-    "versionCode":  10204,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.104/app-release.apk",
+    "version":  "1.1.105",
+    "versionCode":  10205,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.105/app-release.apk",
     "force":  false,
-    "releaseNotes":  "Sync v2 groundwork: the app now keeps a local change log of every edit so the upcoming cloud sync can send only what changed. No user-facing changes yet."
+    "releaseNotes":  "Removed the drag-down pull-to-sync gesture from both desktop and mobile to simplify sync behavior."
 }

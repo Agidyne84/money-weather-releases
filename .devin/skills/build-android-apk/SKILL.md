@@ -1,4 +1,5 @@
 ---
+name: build-android-apk
 description: Build Android APK for Money Weather Capacitor app
 ---
 

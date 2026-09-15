@@ -4,7 +4,6 @@ import { Capacitor } from '@capacitor/core'
 import ConnectionStatus from './ConnectionStatus'
 import ScrollToTop from './ScrollToTop'
 import MobileBottomNav from './MobileBottomNav'
-import PullToRefresh from './PullToRefresh'
 import AppLock from './AppLock'
 import FirstTimeLockSetup from './FirstTimeLockSetup'
 import MobileUpdatePrompt from './MobileUpdatePrompt'
@@ -414,18 +413,14 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {/* Main Content */}
       <main className={`max-w-7xl mx-auto w-full sm:px-6 lg:px-8 ${isNativePlatform() ? 'flex-1 overflow-hidden pb-28' : 'py-2'}`}>
         {isNativePlatform() ? (
-          <PullToRefresh>
-            <div className="px-4 py-2 sm:px-0 h-full overflow-y-auto">
-              {children}
-              <AppVersion />
-            </div>
-          </PullToRefresh>
+          <div className="px-4 py-2 sm:px-0 h-full overflow-y-auto">
+            {children}
+            <AppVersion />
+          </div>
         ) : (
-          <PullToRefresh>
-            <div className="px-4 py-2 sm:px-0">
-              {children}
-            </div>
-          </PullToRefresh>
+          <div className="px-4 py-2 sm:px-0">
+            {children}
+          </div>
         )}
       </main>
 

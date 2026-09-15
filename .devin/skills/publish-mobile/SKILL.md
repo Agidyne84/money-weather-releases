@@ -1,6 +1,6 @@
 ---
+name: publish-mobile
 description: Publish a new version of the Money Weather Android app with OTA updates
-tags: [mobile, android, ota, publish, apk]
 ---
 
 # Publish Mobile App (Android OTA)

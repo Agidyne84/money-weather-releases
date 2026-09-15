@@ -1,6 +1,6 @@
 ---
+name: publish-desktop
 description: Publish a new version of the Money Weather desktop app to GitHub Releases
-tags: [desktop, electron, publish, release]
 ---
 
 # Publish Desktop App to GitHub Releases
