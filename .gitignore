@@ -51,6 +51,7 @@ client/android/**
 !client/android/app/build.gradle
 !client/android/app/src/
 !client/android/app/src/main/
+!client/android/app/src/main/AndroidManifest.xml
 !client/android/app/src/main/java/
 !client/android/app/src/main/java/**/*.java
 

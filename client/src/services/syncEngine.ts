@@ -20,6 +20,7 @@ import {
 import { isDirty, clearDirty } from './dirtyTracker'
 import { preferencesApi } from './database'
 import CloudFile from '../plugins/CloudFilePlugin'
+import { isOneDrivePath, oneDriveFileInfo, oneDriveDownload, oneDriveUpload } from './oneDriveProvider'
 
 const API_BASE_URL = 'http://localhost:3001/api'
 const isNative = Capacitor.isNativePlatform()
@@ -200,6 +201,19 @@ function decodeTreeFileRef(path: string): TreeFileRef {
 /* ─── Mobile helpers ─── */
 
 async function mobileFileInfo(filePath: string): Promise<CloudFileInfo> {
+  if (isOneDrivePath(filePath)) {
+    try {
+      const info = await oneDriveFileInfo(filePath)
+      return {
+        exists: info.exists,
+        modifiedAt: info.modifiedAt,
+        size: info.size >= 0 ? info.size : undefined,
+      }
+    } catch {
+      return { exists: false, modifiedAt: null }
+    }
+  }
+
   if (isTreeFilePath(filePath)) {
     const ref = decodeTreeFileRef(filePath)
     try {
@@ -244,6 +258,11 @@ async function mobileFileInfo(filePath: string): Promise<CloudFileInfo> {
 }
 
 async function mobilePull(filePath: string, passphrase?: string): Promise<{ success: boolean; summary: Record<string, number> }> {
+  if (isOneDrivePath(filePath)) {
+    const buffer = await oneDriveDownload(filePath)
+    return await importMobileBackup(buffer, passphrase)
+  }
+
   let base64: string
 
   if (isTreeFilePath(filePath)) {
@@ -284,6 +303,18 @@ async function mobilePush(filePath: string, passphrase?: string): Promise<{ succ
   console.log('[SyncEngine] mobilePush pre-write info:', { filePath, size: beforeInfo.size, exists: beforeInfo.exists, expectedBytes: data.length, expectedHash: hash.slice(0, 16) })
 
   const doWrite = async (): Promise<{ success: boolean; modifiedAt: string; size: number; hash: string }> => {
+    if (isOneDrivePath(filePath)) {
+      console.log('[SyncEngine] mobilePush uploading to OneDrive:', filePath, 'bytes:', data.length, 'hash:', hash.slice(0, 16))
+      const upload = await oneDriveUpload(filePath, data)
+      console.log('[SyncEngine] mobilePush OneDrive upload complete:', { size: upload.size, modifiedAt: upload.modifiedAt })
+      return {
+        success: true,
+        modifiedAt: upload.modifiedAt,
+        size: upload.size,
+        hash,
+      }
+    }
+
     if (isTreeFilePath(filePath)) {
       const ref = decodeTreeFileRef(filePath)
       console.log('[SyncEngine] mobilePush writing tree file:', ref.fileName, 'in folder:', ref.treeUri, 'bytes:', data.length, 'hash:', hash.slice(0, 16))
@@ -377,6 +408,10 @@ async function mobilePush(filePath: string, passphrase?: string): Promise<{ succ
 async function getCloudFileFingerprint(filePath: string): Promise<string | null> {
   if (!isNative) return null // Desktop uses file modification time
   try {
+    if (isOneDrivePath(filePath)) {
+      const buffer = await oneDriveDownload(filePath)
+      return await computeFileFingerprint(buffer)
+    }
     let base64: string
     if (isTreeFilePath(filePath)) {
       const ref = decodeTreeFileRef(filePath)

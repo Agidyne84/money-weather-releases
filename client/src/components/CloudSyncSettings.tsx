@@ -29,6 +29,14 @@ import {
 import { verifyBackupPassword, base64ToArrayBuffer } from '../utils/mobileBackup'
 import { closeDatabase } from '../services/database/mobileDb'
 import CloudFile from '../plugins/CloudFilePlugin'
+import {
+  signInToOneDrive,
+  disconnectOneDrive,
+  isOneDrivePath,
+  encodeOneDrivePath,
+  oneDriveFileInfo,
+  oneDriveDownload,
+} from '../services/oneDriveProvider'
 import AppLock from './AppLock'
 
 const isNative = Capacitor.isNativePlatform()
@@ -73,6 +81,9 @@ const CloudSyncSettings: React.FC = () => {
 
   const displayFilePath = (path: string | null, displayName?: string | null) => {
     if (!path) return 'Not set'
+    if (isOneDrivePath(path)) {
+      return displayName || 'OneDrive · cloud-backup.budgetbackup'
+    }
     if (isTreePath(path)) {
       return displayName || BACKUP_FILE_NAME
     }
@@ -373,6 +384,45 @@ const CloudSyncSettings: React.FC = () => {
     }
   }
 
+  /* ─── OneDrive (direct Microsoft Graph connection) ───
+   * Bypasses Android SAF entirely — the OneDrive DocumentsProvider caches writes
+   * locally and never reliably uploads them. Signing in here stores a refresh
+   * token in secure storage; pushes and pulls then go straight to the real cloud
+   * file at OneDrive/MoneyWeather/<file>. The desktop app syncs the same file by
+   * pointing its backup path at the matching local OneDrive folder file. */
+  const handleConnectOneDrive = async () => {
+    setLoading(true)
+    setMessage(null)
+    try {
+      await signInToOneDrive()
+
+      const entered = prompt('Backup file name in your OneDrive "MoneyWeather" folder:', BACKUP_FILE_NAME)
+      const fileName = (entered || BACKUP_FILE_NAME).trim() || BACKUP_FILE_NAME
+      const oneDrivePath = encodeOneDrivePath(`MoneyWeather/${fileName}`)
+      const displayName = `OneDrive · ${fileName}`
+
+      const info = await oneDriveFileInfo(oneDrivePath)
+      setPendingFileBuffer(null)
+      setPendingFileName(oneDrivePath)
+      setPendingDisplayName(displayName)
+      setFileWarning(null)
+      setPassword('')
+      setConfirmPassword('')
+      setSetupPin('')
+      setVerifyError(false)
+      setPasswordModalContext(info.exists ? 'verify-existing' : 'create-new')
+      setShowPasswordModal(true)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!/cancelled|canceled/i.test(msg)) {
+        console.error('[CloudSync] OneDrive connect failed:', err)
+        setMessage({ type: 'error', text: msg })
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleVerifyFilePassword = async () => {
     if (!pendingFileName) return
     if (!password) return
@@ -398,6 +448,8 @@ const CloudSyncSettings: React.FC = () => {
       let buffer: ArrayBuffer
       if (pendingFileBuffer) {
         buffer = pendingFileBuffer
+      } else if (isNative && isOneDrivePath(pendingFileName)) {
+        buffer = await oneDriveDownload(pendingFileName)
       } else if (isNative && isTreePath(pendingFileName)) {
         const ref = JSON.parse(decodeURIComponent(pendingFileName.slice('treefile:'.length)))
         const readResult = await CloudFile.readFileInFolder({ treeUri: ref.treeUri, fileName: ref.fileName })
@@ -431,7 +483,7 @@ const CloudSyncSettings: React.FC = () => {
         setHasPassword(true)
 
         // Save the file path
-        if (isNative && (isTreePath(pendingFileName) || pendingFileName.startsWith('content://'))) {
+        if (isNative && (isTreePath(pendingFileName) || isOneDrivePath(pendingFileName) || pendingFileName.startsWith('content://'))) {
           await setCloudSyncPath(pendingFileName)
           if (pendingDisplayName) await setCloudSyncDisplayName(pendingDisplayName)
         } else if (isNative) {
@@ -501,7 +553,7 @@ const CloudSyncSettings: React.FC = () => {
       setHasPassword(true)
 
       // Save the file path and display name
-      const isCloudUri = isTreePath(pendingFileName) || pendingFileName.startsWith('content://')
+      const isCloudUri = isTreePath(pendingFileName) || isOneDrivePath(pendingFileName) || pendingFileName.startsWith('content://')
       const displayName = pendingDisplayName || (isCloudUri
         ? BACKUP_FILE_NAME
         : pendingFileName.split(/[\\/]/).pop() || pendingFileName)
@@ -688,6 +740,7 @@ const CloudSyncSettings: React.FC = () => {
     try {
       await clearCloudSyncSettings()
       await deleteStoredPassphrase()
+      await disconnectOneDrive()
       setSettings({ enabled: false, filePath: null, displayName: null, lastSyncTimestamp: null, syncMode: 'manual' })
       setHasPassword(false)
       setMessage({ type: 'success', text: 'Cloud sync settings reset. You can re-configure sync at any time.' })
@@ -732,7 +785,9 @@ const CloudSyncSettings: React.FC = () => {
       // wrong password from overwriting the cloud backup (push) or producing a
       // confusing decryption error during the sync itself.
       let buffer: ArrayBuffer
-      if (isNative && isTreePath(settings.filePath)) {
+      if (isNative && isOneDrivePath(settings.filePath)) {
+        buffer = await oneDriveDownload(settings.filePath)
+      } else if (isNative && isTreePath(settings.filePath)) {
         const ref = JSON.parse(decodeURIComponent(settings.filePath.slice('treefile:'.length)))
         const readResult = await CloudFile.readFileInFolder({ treeUri: ref.treeUri, fileName: ref.fileName })
         buffer = base64ToArrayBuffer(readResult.data)
@@ -912,6 +967,16 @@ const CloudSyncSettings: React.FC = () => {
                 Create New File
               </button>
             </div>
+
+            {isNative && (
+              <button
+                onClick={handleConnectOneDrive}
+                disabled={loading}
+                className="w-full px-3 py-1.5 text-sm bg-blue-50 border border-blue-300 text-blue-700 rounded-md hover:bg-blue-100 disabled:opacity-50"
+              >
+                Connect OneDrive (recommended)
+              </button>
+            )}
 
             {isNative && (
               <p className="text-xs text-gray-400">
