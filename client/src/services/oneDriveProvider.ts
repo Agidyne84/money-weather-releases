@@ -303,6 +303,8 @@ export async function signInToOneDrive(): Promise<void> {
   authUrl.searchParams.set('state', state)
   authUrl.searchParams.set('code_challenge', challenge)
   authUrl.searchParams.set('code_challenge_method', 'S256')
+  // Always show the account chooser so the user can switch Microsoft accounts.
+  authUrl.searchParams.set('prompt', 'select_account')
 
   const code = await new Promise<string>((resolve, reject) => {
     let settled = false

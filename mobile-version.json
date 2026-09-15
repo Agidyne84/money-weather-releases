@@ -1,7 +1,7 @@
 {
-    "version":  "1.1.107",
-    "versionCode":  10207,
-    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.107/app-release.apk",
+    "version":  "1.1.108",
+    "versionCode":  10208,
+    "downloadUrl":  "https://github.com/Agidyne84/money-weather-releases/releases/download/v1.1.108/app-release.apk",
     "force":  false,
-    "releaseNotes":  "OneDrive connect now opens a full file browser: pick an existing backup anywhere in your OneDrive, or create a new one in any folder. Adds a connected indicator and shows remaining OneDrive storage."
+    "releaseNotes":  "Cloud sync polish: keyboard stays open when toggling password visibility, PIN entry uses the number pad, picking a OneDrive file via the file picker now warns to use Connect OneDrive instead, and Connect OneDrive always offers the account chooser."
 }

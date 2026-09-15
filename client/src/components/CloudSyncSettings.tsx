@@ -45,6 +45,10 @@ import AppLock from './AppLock'
 const isNative = Capacitor.isNativePlatform()
 const BACKUP_FILE_NAME = 'cloud-backup.budgetbackup'
 const isTreePath = (path: string): boolean => path.startsWith('treefile:')
+// OneDrive's SAF provider authority (com.microsoft.skydrive.*). Files picked this
+// way can't be reliably updated — they must go through Connect OneDrive instead.
+const isOneDriveSafUri = (uri: string): boolean => /^content:\/\/[^/]*(skydrive|onedrive)/i.test(uri)
+const ONEDRIVE_SAF_MESSAGE = "This file is in OneDrive. Android can't reliably update OneDrive files through the file picker — tap 'Connect OneDrive' to link it directly."
 
 type PasswordModalContext = 'create' | 'verify-existing' | 'create-new' | 'sync-password'
 
@@ -288,6 +292,12 @@ const CloudSyncSettings: React.FC = () => {
     const pick = await CloudFile.pickFile({ mimeType: '*/*' })
     console.log('[CloudSync] pickFile result:', pick.uri, pick.name)
 
+    if (isOneDriveSafUri(pick.uri)) {
+      await Preferences.remove({ key: 'cloud_sync_pending_verify' })
+      setMessage({ type: 'error', text: ONEDRIVE_SAF_MESSAGE })
+      return
+    }
+
     const fileName = (pick.name || pick.uri || '').toString()
     const hasBackupExt = fileName.toLowerCase().endsWith('.budgetbackup')
     const warning = hasBackupExt ? null : `This file does not have a .budgetbackup extension (${fileName}). Make sure it is a valid backup.`
@@ -367,6 +377,10 @@ const CloudSyncSettings: React.FC = () => {
     setMessage(null)
     try {
       const pick = await CloudFile.pickFile({ mimeType: '*/*' })
+      if (isOneDriveSafUri(pick.uri)) {
+        setMessage({ type: 'error', text: ONEDRIVE_SAF_MESSAGE })
+        return
+      }
       const info = await CloudFile.getFileInfo({ uri: pick.uri })
       const isEmpty = info.exists && info.size === 0
       if (!isEmpty) {
@@ -426,8 +440,13 @@ const CloudSyncSettings: React.FC = () => {
     setLoading(true)
     setMessage(null)
     try {
-      if (!(await isOneDriveConnected())) {
-        await signInToOneDrive()
+      const wasConnected = await isOneDriveConnected()
+      try {
+        await signInToOneDrive() // always offers the account chooser
+      } catch (err) {
+        // Cancelling the chooser while already connected keeps the existing session.
+        const msg = err instanceof Error ? err.message : String(err)
+        if (!(/cancelled|canceled/i.test(msg) && wasConnected)) throw err
       }
       setOdConnected(true)
       setOdBrowserOpen(true)
@@ -1159,6 +1178,8 @@ const CloudSyncSettings: React.FC = () => {
                   }`}
                 />
                 <button
+                  type="button"
+                  onPointerDown={e => e.preventDefault()}
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-blue-600"
                 >
@@ -1182,6 +1203,8 @@ const CloudSyncSettings: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm pr-12"
                   />
                   <button
+                    type="button"
+                    onPointerDown={e => e.preventDefault()}
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-blue-600"
                   >
@@ -1196,6 +1219,9 @@ const CloudSyncSettings: React.FC = () => {
                 <label className="block text-xs font-medium text-gray-700">App PIN</label>
                 <input
                   type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="off"
                   placeholder="Enter your app PIN"
                   value={setupPin}
                   onChange={e => setSetupPin(e.target.value)}
