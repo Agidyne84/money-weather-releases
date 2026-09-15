@@ -187,13 +187,58 @@ function driveItemUrl(oneDrivePath: string): string {
 
 async function graphError(response: Response): Promise<Error> {
   let message = `HTTP ${response.status}`
+  let code = ''
   try {
     const json = await response.json()
     if (json.error?.message) message = json.error.message
+    if (json.error?.code) code = json.error.code
   } catch {
     // keep default
   }
+  if (code === 'quotaLimitReached' || /quota/i.test(message)) {
+    return new Error('OneDrive storage is full — free up space in OneDrive, then try again')
+  }
+  if (response.status === 401 || code === 'unauthenticated' || code === 'InvalidAuthenticationToken') {
+    return new Error('OneDrive sign-in expired — reconnect via Connect OneDrive')
+  }
   return new Error(`OneDrive error: ${message}`)
+}
+
+export interface OneDriveItem {
+  name: string
+  isFolder: boolean
+  size: number
+  modifiedAt: string | null
+}
+
+/** List children of a folder. Pass '' for the drive root. */
+export async function oneDriveListFolder(folderPath: string): Promise<OneDriveItem[]> {
+  const select = '$select=name,size,lastModifiedDateTime,folder,file'
+  const url = folderPath
+    ? `${driveItemUrl(folderPath)}:/children?${select}&$top=500`
+    : `/me/drive/root/children?${select}&$top=500`
+  const response = await graphFetch(url)
+  if (!response.ok) throw await graphError(response)
+  const json = await response.json()
+  return (json.value || []).map((item: any) => ({
+    name: item.name,
+    isFolder: !!item.folder,
+    size: typeof item.size === 'number' ? item.size : -1,
+    modifiedAt: item.lastModifiedDateTime || null,
+  }))
+}
+
+/** Drive quota for the signed-in account (bytes). Used to surface "drive full" states. */
+export async function oneDriveQuota(): Promise<{ used: number; total: number; remaining: number } | null> {
+  const response = await graphFetch('/me/drive?$select=quota')
+  if (!response.ok) return null
+  const json = await response.json()
+  if (!json.quota) return null
+  return {
+    used: json.quota.used ?? 0,
+    total: json.quota.total ?? 0,
+    remaining: json.quota.remaining ?? 0,
+  }
 }
 
 export async function oneDriveFileInfo(filePath: string): Promise<OneDriveFileInfo> {

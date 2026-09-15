@@ -32,10 +32,13 @@ import CloudFile from '../plugins/CloudFilePlugin'
 import {
   signInToOneDrive,
   disconnectOneDrive,
+  isOneDriveConnected,
   isOneDrivePath,
   encodeOneDrivePath,
-  oneDriveFileInfo,
   oneDriveDownload,
+  oneDriveListFolder,
+  oneDriveQuota,
+  type OneDriveItem,
 } from '../services/oneDriveProvider'
 import AppLock from './AppLock'
 
@@ -78,6 +81,15 @@ const CloudSyncSettings: React.FC = () => {
   const [fileWarning, setFileWarning] = useState<string | null>(null)
   const [setupPin, setSetupPin] = useState('')
 
+  // OneDrive browser modal
+  const [odConnected, setOdConnected] = useState(false)
+  const [odBrowserOpen, setOdBrowserOpen] = useState(false)
+  const [odPath, setOdPath] = useState('') // '' = drive root
+  const [odItems, setOdItems] = useState<OneDriveItem[]>([])
+  const [odLoading, setOdLoading] = useState(false)
+  const [odError, setOdError] = useState<string | null>(null)
+  const [odQuota, setOdQuota] = useState<{ used: number; total: number; remaining: number } | null>(null)
+
 
   const displayFilePath = (path: string | null, displayName?: string | null) => {
     if (!path) return 'Not set'
@@ -111,6 +123,7 @@ const CloudSyncSettings: React.FC = () => {
     setSettings(s)
     const hp = await hasStoredPassphrase()
     setHasPassword(hp)
+    setOdConnected(isNative ? await isOneDriveConnected() : false)
     if (s.enabled && s.filePath) {
       const status = await checkCloudSyncStatus(s.filePath)
       const isMissing = status === 'missing'
@@ -388,30 +401,37 @@ const CloudSyncSettings: React.FC = () => {
    * Bypasses Android SAF entirely — the OneDrive DocumentsProvider caches writes
    * locally and never reliably uploads them. Signing in here stores a refresh
    * token in secure storage; pushes and pulls then go straight to the real cloud
-   * file at OneDrive/MoneyWeather/<file>. The desktop app syncs the same file by
-   * pointing its backup path at the matching local OneDrive folder file. */
+   * file. The desktop app syncs the same file by pointing its backup path at the
+   * matching file in its local OneDrive folder. */
+  const loadOneDriveFolder = async (path: string) => {
+    setOdLoading(true)
+    setOdError(null)
+    try {
+      const [items, quota] = await Promise.all([
+        oneDriveListFolder(path),
+        path === '' ? oneDriveQuota() : Promise.resolve(null),
+      ])
+      items.sort((a, b) => (a.isFolder === b.isFolder ? a.name.localeCompare(b.name) : a.isFolder ? -1 : 1))
+      setOdItems(items)
+      setOdPath(path)
+      if (quota) setOdQuota(quota)
+    } catch (err) {
+      setOdError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setOdLoading(false)
+    }
+  }
+
   const handleConnectOneDrive = async () => {
     setLoading(true)
     setMessage(null)
     try {
-      await signInToOneDrive()
-
-      const entered = prompt('Backup file name in your OneDrive "MoneyWeather" folder:', BACKUP_FILE_NAME)
-      const fileName = (entered || BACKUP_FILE_NAME).trim() || BACKUP_FILE_NAME
-      const oneDrivePath = encodeOneDrivePath(`MoneyWeather/${fileName}`)
-      const displayName = `OneDrive · ${fileName}`
-
-      const info = await oneDriveFileInfo(oneDrivePath)
-      setPendingFileBuffer(null)
-      setPendingFileName(oneDrivePath)
-      setPendingDisplayName(displayName)
-      setFileWarning(null)
-      setPassword('')
-      setConfirmPassword('')
-      setSetupPin('')
-      setVerifyError(false)
-      setPasswordModalContext(info.exists ? 'verify-existing' : 'create-new')
-      setShowPasswordModal(true)
+      if (!(await isOneDriveConnected())) {
+        await signInToOneDrive()
+      }
+      setOdConnected(true)
+      setOdBrowserOpen(true)
+      await loadOneDriveFolder('')
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       if (!/cancelled|canceled/i.test(msg)) {
@@ -421,6 +441,47 @@ const CloudSyncSettings: React.FC = () => {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleOneDriveSelectFile = async (item: OneDriveItem) => {
+    const fullPath = odPath ? `${odPath}/${item.name}` : item.name
+    const oneDrivePath = encodeOneDrivePath(fullPath)
+    const displayName = `OneDrive · ${fullPath}`
+    setOdBrowserOpen(false)
+    try {
+      const buffer = await oneDriveDownload(oneDrivePath)
+      setPendingFileBuffer(buffer)
+    } catch (err) {
+      console.warn('[CloudSync] Could not pre-download OneDrive file for verification:', err)
+      setPendingFileBuffer(null)
+    }
+    const hasBackupExt = item.name.toLowerCase().endsWith('.budgetbackup')
+    setFileWarning(hasBackupExt ? null : `This file does not have a .budgetbackup extension (${item.name}). Make sure it is a valid backup.`)
+    setPendingFileName(oneDrivePath)
+    setPendingDisplayName(displayName)
+    setPassword('')
+    setConfirmPassword('')
+    setSetupPin('')
+    setVerifyError(false)
+    setPasswordModalContext('verify-existing')
+    setShowPasswordModal(true)
+  }
+
+  const handleOneDriveCreateHere = () => {
+    const entered = prompt(`Name for the new backup file in "OneDrive${odPath ? `/${odPath}` : ''}":`, BACKUP_FILE_NAME)
+    const fileName = (entered || BACKUP_FILE_NAME).trim() || BACKUP_FILE_NAME
+    const fullPath = odPath ? `${odPath}/${fileName}` : fileName
+    setOdBrowserOpen(false)
+    setPendingFileBuffer(null)
+    setPendingFileName(encodeOneDrivePath(fullPath))
+    setPendingDisplayName(`OneDrive · ${fullPath}`)
+    setFileWarning(null)
+    setPassword('')
+    setConfirmPassword('')
+    setSetupPin('')
+    setVerifyError(false)
+    setPasswordModalContext('create-new')
+    setShowPasswordModal(true)
   }
 
   const handleVerifyFilePassword = async () => {
@@ -969,13 +1030,18 @@ const CloudSyncSettings: React.FC = () => {
             </div>
 
             {isNative && (
-              <button
-                onClick={handleConnectOneDrive}
-                disabled={loading}
-                className="w-full px-3 py-1.5 text-sm bg-blue-50 border border-blue-300 text-blue-700 rounded-md hover:bg-blue-100 disabled:opacity-50"
-              >
-                Connect OneDrive (recommended)
-              </button>
+              <div className="space-y-1">
+                <button
+                  onClick={handleConnectOneDrive}
+                  disabled={loading}
+                  className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Connect OneDrive
+                </button>
+                {odConnected && (
+                  <p className="text-xs text-green-600">Microsoft account connected</p>
+                )}
+              </div>
             )}
 
             {isNative && (
@@ -1163,6 +1229,91 @@ const CloudSyncSettings: React.FC = () => {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* OneDrive file browser */}
+      {odBrowserOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5 space-y-3 max-h-[80vh] flex flex-col">
+            <h3 className="text-lg font-semibold text-gray-900">Choose a backup file in OneDrive</h3>
+
+            <div className="flex items-center gap-1 text-xs text-gray-500 flex-wrap">
+              <button onClick={() => loadOneDriveFolder('')} className="text-blue-600 hover:underline">OneDrive</button>
+              {odPath.split('/').filter(Boolean).map((segment, i, arr) => (
+                <span key={i} className="flex items-center gap-1">
+                  <span>/</span>
+                  <button
+                    onClick={() => loadOneDriveFolder(arr.slice(0, i + 1).join('/'))}
+                    className="text-blue-600 hover:underline"
+                  >
+                    {segment}
+                  </button>
+                </span>
+              ))}
+            </div>
+
+            {odQuota && (
+              <p className="text-xs text-gray-400">
+                {(odQuota.remaining / 1073741824).toFixed(1)} GB free of {(odQuota.total / 1073741824).toFixed(0)} GB
+              </p>
+            )}
+
+            {odError && (
+              <p className="text-xs text-red-600">{odError}</p>
+            )}
+
+            <div className="flex-1 min-h-0 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
+              {odLoading ? (
+                <p className="p-4 text-sm text-gray-500 text-center">Loading…</p>
+              ) : (
+                <>
+                  {odPath && (
+                    <button
+                      onClick={() => loadOneDriveFolder(odPath.split('/').slice(0, -1).join('/'))}
+                      className="w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
+                    >
+                      .. (up)
+                    </button>
+                  )}
+                  {odItems.length === 0 && !odError && (
+                    <p className="p-4 text-sm text-gray-400 text-center">Empty folder</p>
+                  )}
+                  {odItems.map((item) => (
+                    <button
+                      key={item.name}
+                      onClick={() => item.isFolder ? loadOneDriveFolder(odPath ? `${odPath}/${item.name}` : item.name) : handleOneDriveSelectFile(item)}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between gap-2"
+                    >
+                      <span className={`truncate ${item.isFolder ? 'text-gray-800 font-medium' : 'text-gray-700'}`}>
+                        {item.isFolder ? '📁 ' : ''}{item.name}
+                      </span>
+                      {!item.isFolder && item.size >= 0 && (
+                        <span className="text-xs text-gray-400 flex-shrink-0">
+                          {item.size < 1024 ? `${item.size} B` : `${(item.size / 1024).toFixed(1)} KB`}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleOneDriveCreateHere}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+              >
+                New backup file here
+              </button>
+              <button
+                onClick={() => setOdBrowserOpen(false)}
+                className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
