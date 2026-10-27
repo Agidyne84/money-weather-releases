@@ -11,7 +11,8 @@ import { Preferences } from '@capacitor/preferences'
 import { SecureStorage } from '@aparajita/capacitor-secure-storage'
 
 const CLIENT_ID = 'ad5d849b-e20c-4d22-a862-2d34b36412b4'
-const AUTHORITY = 'https://login.microsoftonline.com/consumers/oauth2/v2.0'
+// "common" accepts both personal Microsoft accounts and work/school accounts.
+const AUTHORITY = 'https://login.microsoftonline.com/common/oauth2/v2.0'
 const REDIRECT_URI = 'moneyweather://oauth'
 const SCOPES = 'Files.ReadWrite offline_access'
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'

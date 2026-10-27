@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { Capacitor } from '@capacitor/core'
 import ConnectionStatus from './ConnectionStatus'
 import ScrollToTop from './ScrollToTop'
+import ScrollRestoration from './ScrollRestoration'
 import MobileBottomNav from './MobileBottomNav'
 import AppLock from './AppLock'
 import FirstTimeLockSetup from './FirstTimeLockSetup'
@@ -413,7 +414,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {/* Main Content */}
       <main className={`max-w-7xl mx-auto w-full sm:px-6 lg:px-8 ${isNativePlatform() ? 'flex-1 overflow-hidden pb-28' : 'py-2'}`}>
         {isNativePlatform() ? (
-          <div className="px-4 py-2 sm:px-0 h-full overflow-y-auto">
+          <div data-scroll-container className="px-4 py-2 sm:px-0 h-full overflow-y-auto">
             {children}
             <AppVersion />
           </div>
@@ -429,6 +430,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {isNativePlatform() && <MobileBottomNav />}
 
       <ScrollToTop />
+      <ScrollRestoration />
     </div>
   )
 }

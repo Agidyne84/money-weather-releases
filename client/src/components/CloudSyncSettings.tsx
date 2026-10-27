@@ -93,6 +93,7 @@ const CloudSyncSettings: React.FC = () => {
   const [odLoading, setOdLoading] = useState(false)
   const [odError, setOdError] = useState<string | null>(null)
   const [odQuota, setOdQuota] = useState<{ used: number; total: number; remaining: number } | null>(null)
+  const [odSafWarning, setOdSafWarning] = useState<'select' | 'create' | null>(null)
 
 
   const displayFilePath = (path: string | null, displayName?: string | null) => {
@@ -294,7 +295,7 @@ const CloudSyncSettings: React.FC = () => {
 
     if (isOneDriveSafUri(pick.uri)) {
       await Preferences.remove({ key: 'cloud_sync_pending_verify' })
-      setMessage({ type: 'error', text: ONEDRIVE_SAF_MESSAGE })
+      setOdSafWarning('select')
       return
     }
 
@@ -378,7 +379,7 @@ const CloudSyncSettings: React.FC = () => {
     try {
       const pick = await CloudFile.pickFile({ mimeType: '*/*' })
       if (isOneDriveSafUri(pick.uri)) {
-        setMessage({ type: 'error', text: ONEDRIVE_SAF_MESSAGE })
+        setOdSafWarning('create')
         return
       }
       const info = await CloudFile.getFileInfo({ uri: pick.uri })
@@ -1255,6 +1256,47 @@ const CloudSyncSettings: React.FC = () => {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* OneDrive SAF warning — a OneDrive file was picked via the standard picker */}
+      {odSafWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900">Use Connect OneDrive instead</h3>
+            <p className="text-sm text-gray-600">{ONEDRIVE_SAF_MESSAGE}</p>
+            <div className="space-y-2">
+              <button
+                onClick={async () => {
+                  setOdSafWarning(null)
+                  await handleConnectOneDrive()
+                }}
+                className="w-full px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+              >
+                Connect OneDrive
+              </button>
+              <button
+                onClick={async () => {
+                  const retry = odSafWarning
+                  setOdSafWarning(null)
+                  if (retry === 'create') {
+                    await handleCreateNew()
+                  } else {
+                    await runMobileFilePicker()
+                  }
+                }}
+                className="w-full px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm rounded-md hover:bg-gray-50"
+              >
+                Pick a different file
+              </button>
+              <button
+                onClick={() => setOdSafWarning(null)}
+                className="w-full px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
